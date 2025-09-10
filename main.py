@@ -13,6 +13,8 @@ from config import *
 def login_utoronto_and_get_tokens():
     # Chrome settings
     chrome_options = Options()
+    chrome_options.add_argument("--headless")  # hide window
+    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--disable-notifications")
 
     driver = webdriver.Chrome(options=chrome_options)
@@ -35,6 +37,12 @@ def login_utoronto_and_get_tokens():
 
         login_button = driver.find_element(By.NAME, "_eventId_proceed")
         login_button.click()
+        current_url = driver.current_url
+        if "idpz.utorauth.utoronto.ca" in current_url:
+            print("账号或密码错误，请检查后重试。")
+            return None, None
+        else:
+            print("登录成功！")
 
         print("等待登录完成...")
         time.sleep(1)
