@@ -1,6 +1,10 @@
 import sys
 import datetime
 import time
+import os
+import json
+
+import requests
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt5.QtGui import QColor, QTextCursor, QFont
 from PyQt5.QtWidgets import (
@@ -24,6 +28,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
 from config import level_colors, level_emojis, gui_style, selenium_chrome_options
+
+COOKIE_FILE = "acorn_cookies.json"
 
 
 class LogTextEdit(QTextEdit):
@@ -127,6 +133,7 @@ class LoginWorker(QObject):
                 self.log.emit(
                     "Wait for ACORN main page timeout, continue anyway.", "warning"
                 )
+
             # get cookies
             cookies = driver.get_cookies()
             cookies_dict = {cookie["name"]: cookie["value"] for cookie in cookies}
@@ -160,6 +167,9 @@ class MainWindow(QMainWindow):
         self.xsrf_token = None
         self.thread = None
         self.worker = None
+        self.current_username = None
+
+        self.cookie_store = self.load_cookie_store()
 
         # GUI styles
         self.setStyleSheet(gui_style)
@@ -234,7 +244,81 @@ class MainWindow(QMainWindow):
             "Please input your UTORid and password to login.", "info"
         )
 
-    # Event process
+    def load_cookie_store(self) -> dict:
+        """Load cookie cache from local file"""
+        if not os.path.exists(COOKIE_FILE):
+            return {}
+        try:
+            with open(COOKIE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+            return {}
+        except Exception:
+
+            return {}
+
+    def save_cookie_store(self):
+        """Save cookie cache to local file"""
+        try:
+            with open(COOKIE_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.cookie_store, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            self.log_widget.append_log(
+                f"Failed to save cookie file: {str(e)}", "warning"
+            )
+
+    def try_use_cached_session(self, username: str) -> bool:
+        """use local cookies cache if still valid."""
+        user_entry = self.cookie_store.get(username)
+        if not user_entry:
+            self.log_widget.append_log(
+                "No saved cookies found for this user, will login.", "debug"
+            )
+            return False
+
+        cookies_dict = user_entry.get("cookies") or {}
+        xsrf_token = user_entry.get("xsrf_token")
+
+        if not cookies_dict or not xsrf_token:
+            self.log_widget.append_log(
+                "Saved cookies are incomplete, will login again.", "warning"
+            )
+            return False
+
+        self.log_widget.append_log(
+            "Found saved cookies, trying to reuse session...", "info"
+        )
+
+        try:
+            session = requests.Session()
+            session.cookies.update(cookies_dict)
+
+            headers = {"X-XSRF-TOKEN": xsrf_token}
+            test_url = (
+                "https://acorn.utoronto.ca/sws/rest/enrolment/current-registrations"
+            )
+            resp = session.get(test_url, headers=headers, timeout=10)
+
+            if resp.status_code == 200:
+                self.log_widget.append_log(
+                    "Saved session is still valid, login skipped.", "success"
+                )
+                self.cookies_dict = cookies_dict
+                self.xsrf_token = xsrf_token
+                return True
+            else:
+                self.log_widget.append_log(
+                    f"Saved session invalid (HTTP {resp.status_code}), re-login needed.",
+                    "warning",
+                )
+                return False
+        except Exception as e:
+            self.log_widget.append_log(
+                f"Failed to reuse cookies, will login again: {str(e)}", "warning"
+            )
+            return False
+
     def handle_login(self):
         username = self.username_edit.text().strip()
         password = self.password_edit.text().strip()
@@ -243,6 +327,13 @@ class MainWindow(QMainWindow):
             self.log_widget.append_log(
                 "Username or password can't be empty.", "warning"
             )
+            return
+
+        self.current_username = username
+
+        # try use local cookies
+        if self.try_use_cached_session(username):
+            # if still valid no need to login and get cookies again.
             return
 
         self.log_widget.append_log(f"Trying to login: {username}", "info")
@@ -278,6 +369,19 @@ class MainWindow(QMainWindow):
         """finished callback"""
         self.cookies_dict = cookies_dict
         self.xsrf_token = xsrf_token
+
+        # cookies cache
+        if self.current_username:
+            self.cookie_store[self.current_username] = {
+                "cookies": cookies_dict,
+                "xsrf_token": xsrf_token,
+                "saved_at": datetime.datetime.now().isoformat(),
+            }
+            self.save_cookie_store()
+            self.log_widget.append_log(
+                "Cookies saved locally for future logins.", "success"
+            )
+
         self.log_widget.append_log(
             "Login finished. Cookies and XSRF token saved.", "success"
         )
