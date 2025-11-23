@@ -264,16 +264,14 @@ class MainWindow(QMainWindow):
             with open(COOKIE_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.cookie_store, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            self.log_widget.append_log(
-                f"Failed to save cookie file: {str(e)}", "warning"
-            )
+            self.log_widget.append_log(f"Failed to save cookie file: {str(e)}", "error")
 
     def try_use_cached_session(self, username: str) -> bool:
         """use local cookies cache if still valid."""
         user_entry = self.cookie_store.get(username)
         if not user_entry:
             self.log_widget.append_log(
-                "No saved cookies found for this user, will login.", "debug"
+                "No saved cookies found for this user, will login.", "error"
             )
             return False
 
@@ -282,7 +280,7 @@ class MainWindow(QMainWindow):
 
         if not cookies_dict or not xsrf_token:
             self.log_widget.append_log(
-                "Saved cookies are incomplete, will login again.", "warning"
+                "Saved cookies are not longer valid, will login again.", "warning"
             )
             return False
 
@@ -309,7 +307,7 @@ class MainWindow(QMainWindow):
                 return True
             else:
                 self.log_widget.append_log(
-                    f"Saved session invalid (HTTP {resp.status_code}), re-login needed.",
+                    f"Saved session invalid Code:{resp.status_code}, re-login needed.",
                     "warning",
                 )
                 return False
