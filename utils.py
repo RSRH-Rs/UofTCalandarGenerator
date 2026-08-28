@@ -265,9 +265,9 @@ def _section_code(value: dict) -> str:
     for key in (
         "sectionCode",
         "activityCode",
-            "academicActivityCode",
-            "teachMethod",
-            "activity",
+        "academicActivityCode",
+        "teachMethod",
+        "activity",
         "code",
         "name",
     ):
