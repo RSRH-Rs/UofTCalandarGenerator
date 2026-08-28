@@ -1,7 +1,11 @@
 __pycache__/
 *.pyc
 
-# PyInstaller output (the .spec is tracked; these are generated)
+# Kept local only
+tests/
+*.spec
+
+# PyInstaller output
 build/
 dist/
 
