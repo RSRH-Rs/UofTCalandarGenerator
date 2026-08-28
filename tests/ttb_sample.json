@@ -1,0 +1,1223 @@
+{
+ "payload": {
+  "pageableCourse": {
+   "total": 8,
+   "courses": [
+    {
+     "id": "69dd3ea4830c3634bbb69a3b",
+     "name": "Introduction to Computer Programming",
+     "code": "CSC108H1",
+     "sectionCode": "F",
+     "campus": "St. George",
+     "sessions": [
+      "20269"
+     ],
+     "sections": [
+      {
+       "name": "LEC0201",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "0201",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 1,
+          "millisofday": 46800000
+         },
+         "end": {
+          "day": 1,
+          "millisofday": 50400000
+         },
+         "building": {
+          "buildingCode": "PB",
+          "buildingRoomNumber": "B250",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494476",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 46800000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 54000000
+         },
+         "building": {
+          "buildingCode": "MB",
+          "buildingRoomNumber": "128",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494466",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "LEC0401",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "0401",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 1,
+          "millisofday": 54000000
+         },
+         "end": {
+          "day": 1,
+          "millisofday": 57600000
+         },
+         "building": {
+          "buildingCode": "MP",
+          "buildingRoomNumber": "202",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494490",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 54000000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 61200000
+         },
+         "building": {
+          "buildingCode": "MP",
+          "buildingRoomNumber": "203",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494490",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "LEC0701",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "0701",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 2,
+          "millisofday": 46800000
+         },
+         "end": {
+          "day": 2,
+          "millisofday": 54000000
+         },
+         "building": {
+          "buildingCode": "MP",
+          "buildingRoomNumber": "203",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494490",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 4,
+          "millisofday": 46800000
+         },
+         "end": {
+          "day": 4,
+          "millisofday": 50400000
+         },
+         "building": {
+          "buildingCode": "MP",
+          "buildingRoomNumber": "102",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494490",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      }
+     ],
+     "cancelInd": "N"
+    },
+    {
+     "id": "69dd3ea4830c3634bbb69a3c",
+     "name": "Introduction to Computer Programming",
+     "code": "CSC108H1",
+     "sectionCode": "S",
+     "campus": "St. George",
+     "sessions": [
+      "20271"
+     ],
+     "sections": [
+      {
+       "name": "LEC0201",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "0201",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 1,
+          "millisofday": 54000000
+         },
+         "end": {
+          "day": 1,
+          "millisofday": 61200000
+         },
+         "building": {
+          "buildingCode": "AH",
+          "buildingRoomNumber": "400",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494578",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 54000000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 57600000
+         },
+         "building": {
+          "buildingCode": "MP",
+          "buildingRoomNumber": "103",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494490",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "LEC0102",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "0102",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 1,
+          "millisofday": 46800000
+         },
+         "end": {
+          "day": 1,
+          "millisofday": 54000000
+         },
+         "building": {
+          "buildingCode": "MY",
+          "buildingRoomNumber": "150",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494495",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 46800000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 50400000
+         },
+         "building": {
+          "buildingCode": "MY",
+          "buildingRoomNumber": "150",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494495",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "LEC0301",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "0301",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 2,
+          "millisofday": 54000000
+         },
+         "end": {
+          "day": 2,
+          "millisofday": 61200000
+         },
+         "building": {
+          "buildingCode": "MP",
+          "buildingRoomNumber": "102",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494490",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 4,
+          "millisofday": 54000000
+         },
+         "end": {
+          "day": 4,
+          "millisofday": 57600000
+         },
+         "building": {
+          "buildingCode": "MP",
+          "buildingRoomNumber": "203",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494490",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      }
+     ],
+     "cancelInd": "N"
+    },
+    {
+     "id": "696f7d2320609159511a6637",
+     "name": "Introduction to Computer Programming",
+     "code": "CSC108H1",
+     "sectionCode": "Y",
+     "campus": "St. George",
+     "sessions": [
+      "20265"
+     ],
+     "sections": [
+      {
+       "name": "LEC5101",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "5101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 64800000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 75600000
+         },
+         "building": {
+          "buildingCode": "MP",
+          "buildingRoomNumber": "203",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494490",
+          "buildingName": null
+         },
+         "sessionCode": "20265",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      }
+     ],
+     "cancelInd": "N"
+    },
+    {
+     "id": "696f7d2320609159511a6747",
+     "name": "Calculus I",
+     "code": "MAT135H1",
+     "sectionCode": "F",
+     "campus": "St. George",
+     "sessions": [
+      "20265F"
+     ],
+     "sections": [
+      {
+       "name": "TUT0101",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "0101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 1,
+          "millisofday": 32400000
+         },
+         "end": {
+          "day": 1,
+          "millisofday": 36000000
+         },
+         "building": {
+          "buildingCode": "FE",
+          "buildingRoomNumber": "24",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494550",
+          "buildingName": null
+         },
+         "sessionCode": "20265F",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 32400000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 36000000
+         },
+         "building": {
+          "buildingCode": "FE",
+          "buildingRoomNumber": "24",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494550",
+          "buildingName": null
+         },
+         "sessionCode": "20265F",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT5201",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "5201",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 61200000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 64800000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "2195",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265F",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 61200000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 64800000
+         },
+         "building": {
+          "buildingCode": "FE",
+          "buildingRoomNumber": "24",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494550",
+          "buildingName": null
+         },
+         "sessionCode": "20265F",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "LEC5101",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "5101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 2,
+          "millisofday": 64800000
+         },
+         "end": {
+          "day": 2,
+          "millisofday": 72000000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "1180",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265F",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 4,
+          "millisofday": 64800000
+         },
+         "end": {
+          "day": 4,
+          "millisofday": 72000000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "1180",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265F",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 64800000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 72000000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "1180",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265F",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT5101",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "5101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 2,
+          "millisofday": 61200000
+         },
+         "end": {
+          "day": 2,
+          "millisofday": 64800000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "2195",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265F",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 4,
+          "millisofday": 61200000
+         },
+         "end": {
+          "day": 4,
+          "millisofday": 64800000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "2195",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265F",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      }
+     ],
+     "cancelInd": "N"
+    },
+    {
+     "id": "69dd3ea4830c3634bbb6a054",
+     "name": "Calculus I",
+     "code": "MAT135H1",
+     "sectionCode": "F",
+     "campus": "St. George",
+     "sessions": [
+      "20269"
+     ],
+     "sections": [
+      {
+       "name": "TUT0504",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "0504",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 46800000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 50400000
+         },
+         "building": {
+          "buildingCode": "OI",
+          "buildingRoomNumber": "5270",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494563",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT0606",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "0606",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 50400000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 54000000
+         },
+         "building": {
+          "buildingCode": "OI",
+          "buildingRoomNumber": "4410",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494563",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT0403",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "0403",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 43200000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 46800000
+         },
+         "building": {
+          "buildingCode": "OI",
+          "buildingRoomNumber": "2286",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494563",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT0404",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "0404",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 43200000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 46800000
+         },
+         "building": {
+          "buildingCode": "OI",
+          "buildingRoomNumber": "8214",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494563",
+          "buildingName": null
+         },
+         "sessionCode": "20269",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      }
+     ],
+     "cancelInd": "N"
+    },
+    {
+     "id": "696f7d2320609159511a6749",
+     "name": "Calculus I",
+     "code": "MAT135H1",
+     "sectionCode": "S",
+     "campus": "St. George",
+     "sessions": [
+      "20265S"
+     ],
+     "sections": [
+      {
+       "name": "TUT5101",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "5101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 4,
+          "millisofday": 61200000
+         },
+         "end": {
+          "day": 4,
+          "millisofday": 64800000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "2185",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265S",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 61200000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 64800000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "2195",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265S",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "LEC5101",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "5101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 2,
+          "millisofday": 64800000
+         },
+         "end": {
+          "day": 2,
+          "millisofday": 72000000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "1220",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265S",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 4,
+          "millisofday": 64800000
+         },
+         "end": {
+          "day": 4,
+          "millisofday": 72000000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "1220",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265S",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 64800000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 72000000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "1220",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20265S",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT0101",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "0101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 4,
+          "millisofday": 57600000
+         },
+         "end": {
+          "day": 4,
+          "millisofday": 61200000
+         },
+         "building": {
+          "buildingCode": "OI",
+          "buildingRoomNumber": "8214",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494563",
+          "buildingName": null
+         },
+         "sessionCode": "20265S",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 57600000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 61200000
+         },
+         "building": {
+          "buildingCode": "OI",
+          "buildingRoomNumber": "8214",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494563",
+          "buildingName": null
+         },
+         "sessionCode": "20265S",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      }
+     ],
+     "cancelInd": "N"
+    },
+    {
+     "id": "69dd3ea4830c3634bbb6a055",
+     "name": "Calculus I",
+     "code": "MAT135H1",
+     "sectionCode": "S",
+     "campus": "St. George",
+     "sessions": [
+      "20271"
+     ],
+     "sections": [
+      {
+       "name": "LEC5101",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "5101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 1,
+          "millisofday": 64800000
+         },
+         "end": {
+          "day": 1,
+          "millisofday": 72000000
+         },
+         "building": {
+          "buildingCode": "SS",
+          "buildingRoomNumber": "2117",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494510",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 68400000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 72000000
+         },
+         "building": {
+          "buildingCode": "BA",
+          "buildingRoomNumber": "1130",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494470",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "LEC0101",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "0101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 1,
+          "millisofday": 54000000
+         },
+         "end": {
+          "day": 1,
+          "millisofday": 61200000
+         },
+         "building": {
+          "buildingCode": "SS",
+          "buildingRoomNumber": "2102",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494510",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 54000000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 57600000
+         },
+         "building": {
+          "buildingCode": "SS",
+          "buildingRoomNumber": "2135",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494510",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT0201",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "0201",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 36000000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 39600000
+         },
+         "building": {
+          "buildingCode": "SS",
+          "buildingRoomNumber": "1084",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494510",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT5101",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "5101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 3,
+          "millisofday": 61200000
+         },
+         "end": {
+          "day": 3,
+          "millisofday": 64800000
+         },
+         "building": {
+          "buildingCode": "UC",
+          "buildingRoomNumber": "261",
+          "buildingRoomSuffix": "",
+          "buildingUrl": "https://map.utoronto.ca/?id=1809#!m/494517",
+          "buildingName": null
+         },
+         "sessionCode": "20271",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      }
+     ],
+     "cancelInd": "N"
+    },
+    {
+     "id": "696f7d2320609159511a6748",
+     "name": "Calculus I",
+     "code": "MAT135H1",
+     "sectionCode": "Y",
+     "campus": "St. George",
+     "sessions": [
+      "20265"
+     ],
+     "sections": [
+      {
+       "name": "LEC0101",
+       "type": "Lecture",
+       "teachMethod": "LEC",
+       "sectionNumber": "0101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 2,
+          "millisofday": 32400000
+         },
+         "end": {
+          "day": 2,
+          "millisofday": 39600000
+         },
+         "building": {
+          "buildingCode": "",
+          "buildingRoomNumber": "",
+          "buildingRoomSuffix": "",
+          "buildingUrl": null,
+          "buildingName": null
+         },
+         "sessionCode": "20265",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        },
+        {
+         "start": {
+          "day": 4,
+          "millisofday": 32400000
+         },
+         "end": {
+          "day": 4,
+          "millisofday": 36000000
+         },
+         "building": {
+          "buildingCode": "",
+          "buildingRoomNumber": "",
+          "buildingRoomSuffix": "",
+          "buildingUrl": null,
+          "buildingName": null
+         },
+         "sessionCode": "20265",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT0201",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "0201",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 5,
+          "millisofday": 32400000
+         },
+         "end": {
+          "day": 5,
+          "millisofday": 36000000
+         },
+         "building": {
+          "buildingCode": "",
+          "buildingRoomNumber": "",
+          "buildingRoomSuffix": "",
+          "buildingUrl": null,
+          "buildingName": null
+         },
+         "sessionCode": "20265",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      },
+      {
+       "name": "TUT0101",
+       "type": "Tutorial",
+       "teachMethod": "TUT",
+       "sectionNumber": "0101",
+       "meetingTimes": [
+        {
+         "start": {
+          "day": 4,
+          "millisofday": 39600000
+         },
+         "end": {
+          "day": 4,
+          "millisofday": 43200000
+         },
+         "building": {
+          "buildingCode": "",
+          "buildingRoomNumber": "",
+          "buildingRoomSuffix": "",
+          "buildingUrl": null,
+          "buildingName": null
+         },
+         "sessionCode": "20265",
+         "repetition": "WEEKLY",
+         "repetitionTime": "ONCE_A_WEEK"
+        }
+       ],
+       "cancelInd": "N",
+       "tbaInd": "N"
+      }
+     ],
+     "cancelInd": "N"
+    }
+   ]
+  }
+ }
+}

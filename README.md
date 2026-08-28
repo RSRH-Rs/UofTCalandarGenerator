@@ -1,7 +1,10 @@
 # U of T Timetable Generator
 
-A small desktop app that signs in to ACORN, loads your courses, and generates
-conflict-free timetables from your preferences.
+A small desktop app that searches the public U of T Timetable Builder
+catalogue and generates conflict-free timetables from every offered section.
+
+No sign-in, no ACORN, no personal data: the app only issues anonymous GET
+requests to the same public API that <https://ttb.utoronto.ca> uses.
 
 ## Run
 
@@ -12,15 +15,44 @@ pip install -r requirements.txt
 python gui.py
 ```
 
-Click **Load courses**. The app reuses `.acorn_session.json` when the saved
-session is valid; otherwise, complete UTORid and Duo sign-in in Chrome. The
-password is never stored. Delete `.acorn_session.json` to forget the session.
+## Using it
 
-Use **View my courses** to display every meeting returned for your enrolled
-activities. **Generate** applies the selected days off and earliest class time,
-then displays the best matching timetable in a weekly grid. **Export PNG** saves
-the complete timetable, including rows outside the visible scroll area.
+**Search.** Start typing in the search box — a code fragment (`M`, `MGEA`), a
+full code, or words from a title (`calculus`). Matches appear as you type;
+press Enter or double-click one to add that course.
 
-The app reads ACORN's current-registration and timetable APIs. ACORN is an
-internal service and may change its response format; this project is not
-affiliated with the University of Toronto.
+**Pin sections.** The *Sections* table lists every activity of every added
+course — one row per lecture, tutorial and practical group. Leave a row on
+*Any section* to let the generator choose, or pick a specific section to lock
+it in. Pinning your tutorial and letting the lectures float is the usual case.
+
+**Generate.** Pick a **Session**, set **Days off** and **Earliest class**, then
+click **Generate**. Only the selected session's offerings are used, so a Summer
+and a Fall offering of the same course are never mixed. Use **◀ Previous** /
+**Next ▶** to browse alternatives and **Export PNG** to save one.
+
+Timetables are ranked by fewest days on campus, then by least time spent
+waiting between classes.
+
+**Your list is remembered.** Added courses, pinned sections, the chosen session
+and the preferences are saved automatically and restored on the next launch —
+in `%LOCALAPPDATA%\UofT-Timetable-Generator\courses.json` for the packaged
+build, or `.ttb_courses.json` beside the source when run from Python. Delete
+that file to start over.
+
+## Limits
+
+The generator picks one section per course activity (one LEC, one TUT, one
+PRA). Some courses restrict which tutorial you may take with a given lecture;
+the API does not expose that linkage, so verify a generated timetable in ACORN
+before enrolling. Sections with no scheduled meeting time (asynchronous or TBA)
+and cancelled sections are skipped.
+
+A search over more than a few large courses can have billions of combinations.
+The search backtracks out of conflicting branches and stops after
+`MAX_SEARCH_STEPS` steps or `MAX_CANDIDATES` complete timetables, so for very
+large searches the ranked results are the best of a sample rather than of every
+possibility. Pinning sections narrows the search and makes the ranking exact.
+
+This project is not affiliated with the University of Toronto, and the
+Timetable Builder API is undocumented and may change.

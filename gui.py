@@ -2,7 +2,7 @@ import math
 import random
 import sys
 
-from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt5.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -12,8 +12,11 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QGridLayout,
     QGroupBox,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
+    QListWidget,
     QMainWindow,
     QPushButton,
     QTableWidget,
@@ -21,23 +24,30 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
 
 from utils import (
-    AcornClient,
     DAY_NAMES,
-    clear_session,
-    extract_sections,
+    CourseNotFound,
+    apply_pins,
+    blocked_groups,
+    clock,
+    decode_pins,
+    encode_pins,
+    fetch_many,
+    fetch_offerings,
     generate_timetables,
-    load_session,
-    save_session,
-    session_token,
-    split_periods,
+    group_sections,
+    load_config,
+    normalize_code,
+    save_config,
+    search_courses,
+    section_summary,
+    session_label,
 )
+
+MAX_SCHEDULES = 20
+SEARCH_DELAY_MS = 300
+ANY_SECTION = "Any section"
 
 STYLE = """
 QWidget { font: 13px "Segoe UI"; color: #202124; }
@@ -48,8 +58,10 @@ QGroupBox::title { left: 10px; padding: 0 4px; font-weight: 600; }
 QPushButton { background: #1a73e8; color: white; border: 0; border-radius: 4px;
               padding: 8px 14px; }
 QPushButton:disabled { background: #aeb8c4; }
-QComboBox { background: white; border: 1px solid #dfe1e5;
-            border-radius: 4px; padding: 5px; }
+QComboBox, QLineEdit { background: white; border: 1px solid #dfe1e5;
+                       border-radius: 4px; padding: 5px; }
+QListWidget { background: white; border: 1px solid #dfe1e5; border-radius: 4px; }
+QListWidget::item:selected { background: #e8f0fe; color: #174ea6; }
 QTableWidget { background: white; border: 1px solid #dfe1e5; gridline-color: #e8eaed; }
 QTableWidget::item { padding: 3px; }
 QHeaderView::section { background: #f8f9fa; border: 0; border-right: 1px solid #dfe1e5;
@@ -126,7 +138,7 @@ class TimetableWidget(QTableWidget):
             location = f"\n{meeting.location}" if meeting.location else ""
             item = QTableWidgetItem(
                 f"{section.course} · {section.code}\n"
-                f"{_clock(meeting.start)}–{_clock(meeting.end)}{location}"
+                f"{clock(meeting.start)}–{clock(meeting.end)}{location}"
             )
             item.setBackground(QColor(color))
             item.setForeground(QColor("white"))
@@ -175,194 +187,439 @@ class TimetableWidget(QTableWidget):
         return saved
 
 
-def _clock(minutes):
-    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+class Task(QObject):
+    """Runs one callable on a worker thread and reports back by signal."""
 
+    done = pyqtSignal(int, object)
+    failed = pyqtSignal(int, str)
 
-class LoginWorker(QObject):
-    finished = pyqtSignal(object)
-    failed = pyqtSignal(str)
+    def __init__(self, sequence, work):
+        super().__init__()
+        self.sequence = sequence
+        self.work = work
 
     def run(self):
-        cached = load_session()
-        if cached:
-            try:
-                sessions = AcornClient(cached, session_token(cached)).fetch_courses()
-                self.finished.emit({"sessions": sessions, "cached": True})
-                return
-            except Exception:
-                clear_session()
-
-        options = Options()
-        options.add_argument("--disable-notifications")
-        driver = None
         try:
-            driver = webdriver.Chrome(options=options)
-            driver.get("https://acorn.utoronto.ca/")
-
-            # The logout link only appears after ACORN authentication finishes.
-            WebDriverWait(driver, 300).until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, 'a[href="auth/logout"]')
-                )
-            )
-            cookies = driver.get_cookies()
-            sessions = AcornClient(cookies, session_token(cookies)).fetch_courses()
-            save_session(cookies)
-            self.finished.emit({"sessions": sessions, "cached": False})
+            self.done.emit(self.sequence, self.work())
+        except CourseNotFound as error:
+            self.failed.emit(self.sequence, str(error))
         except Exception as error:
-            self.failed.emit(str(error))
-        finally:
-            if driver:
-                driver.quit()
+            self.failed.emit(
+                self.sequence, f"Could not reach Timetable Builder: {error}"
+            )
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("U of T Timetable Generator")
-        self.resize(980, 720)
+        self.resize(1100, 860)
         self.setStyleSheet(STYLE)
-        self.groups = {}
-        self.periods = []
-        self.thread = None
-        self.worker = None
 
+        self.offerings = []
+        self.pins = {}
+        self.schedules = []
+        self.index = 0
+        self.jobs = []
+        self.search_sequence = 0
+        self.pending_courses = 0
+
+        self.build_ui()
+        self.restore()
+
+    # -- layout ---------------------------------------------------------
+
+    def build_ui(self):
         root = QWidget()
         layout = QVBoxLayout(root)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
         self.setCentralWidget(root)
 
-        self.status = QLabel("Load your ACORN courses.")
-        self.login_button = QPushButton("Load courses")
-        self.login_button.clicked.connect(self.login)
+        self.status = QLabel("Type a course code or title to search the catalogue.")
         layout.addWidget(self.status)
-        layout.addWidget(self.login_button)
 
-        preferences = QGroupBox("Preferences")
-        grid = QGridLayout(preferences)
-        grid.addWidget(QLabel("Session"), 0, 0)
-        self.session = QComboBox()
-        self.session.currentIndexChanged.connect(self.select_period)
-        grid.addWidget(self.session, 0, 1, 1, 5)
+        columns = QHBoxLayout()
+        columns.setSpacing(12)
+        columns.addWidget(self.build_course_panel(), 1)
+        columns.addWidget(self.build_section_panel(), 1)
+        layout.addLayout(columns)
 
-        grid.addWidget(QLabel("Days off"), 1, 0)
-        self.day_boxes = []
-        for column, day in enumerate(DAY_NAMES, start=1):
-            box = QCheckBox(day[:3])
-            self.day_boxes.append(box)
-            grid.addWidget(box, 1, column)
+        layout.addWidget(self.build_preference_panel())
 
-        grid.addWidget(QLabel("Earliest class"), 2, 0)
-        self.earliest = QComboBox()
-        self.earliest.addItem("No limit", None)
-        for hour in range(9, 16):
-            self.earliest.addItem(f"{hour:02d}:00", hour * 60)
-        grid.addWidget(self.earliest, 2, 1, 1, 2)
-
-        self.view_button = QPushButton("View my courses")
-        self.view_button.setEnabled(False)
-        self.view_button.clicked.connect(self.view_courses)
-        grid.addWidget(self.view_button, 2, 3)
-
-        self.generate_button = QPushButton("Generate")
-        self.generate_button.setEnabled(False)
-        self.generate_button.clicked.connect(self.generate)
-        grid.addWidget(self.generate_button, 2, 4)
-
-        self.export_button = QPushButton("Export PNG")
-        self.export_button.setEnabled(False)
-        self.export_button.clicked.connect(self.export_png)
-        grid.addWidget(self.export_button, 2, 5)
-        layout.addWidget(preferences)
-
-        self.view_title = QLabel("Load courses to view your timetable.")
+        self.view_title = QLabel("No timetable yet.")
         self.view_title.setStyleSheet("font-size: 16px; font-weight: 600;")
         layout.addWidget(self.view_title)
         self.timetable = TimetableWidget()
         layout.addWidget(self.timetable, 1)
 
-    def login(self):
-        self.login_button.setEnabled(False)
-        self.status.setText("Checking saved session...")
+    def build_course_panel(self):
+        box = QGroupBox("Courses")
+        panel = QVBoxLayout(box)
 
-        self.thread = QThread(self)
-        self.worker = LoginWorker()
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.run)
-        self.worker.finished.connect(self.login_finished)
-        self.worker.failed.connect(self.login_failed)
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.failed.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.worker.failed.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-        self.thread.start()
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search, e.g. M, MGEA, or calculus")
+        self.search_input.textEdited.connect(self.search_later)
+        self.search_input.returnPressed.connect(self.add_highlighted)
+        panel.addWidget(self.search_input)
 
-    def login_finished(self, result):
-        sessions = result["sessions"]
-        self.periods = []
-        self.session.clear()
-        courses = set()
-        for session in sessions:
-            groups = extract_sections(session["data"])
-            courses.update(course for course, _ in groups)
-            for period_name, period_groups in split_periods(groups):
-                self.periods.append(period_groups)
-                self.session.addItem(f"{session['label']} · {period_name}")
+        self.results = QListWidget()
+        self.results.setMaximumHeight(150)
+        self.results.itemActivated.connect(self.add_match)
+        self.results.itemDoubleClicked.connect(self.add_match)
+        self.results.hide()
+        panel.addWidget(self.results)
 
-        self.status.setText(
-            f"Loaded {len(courses)} courses in {len(self.periods)} periods"
-            f" using {'saved session' if result['cached'] else 'new login'}."
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.timeout.connect(self.search)
+
+        panel.addWidget(QLabel("Added courses"))
+        self.course_list = QListWidget()
+        self.course_list.setMaximumHeight(130)
+        panel.addWidget(self.course_list)
+
+        self.remove_button = QPushButton("Remove selected")
+        self.remove_button.clicked.connect(self.remove_course)
+        panel.addWidget(self.remove_button)
+        return box
+
+    def build_section_panel(self):
+        box = QGroupBox("Sections")
+        panel = QVBoxLayout(box)
+        panel.addWidget(
+            QLabel("Pin a section, or leave it to the generator.")
         )
-        self.login_button.setEnabled(True)
-        self.select_period(self.session.currentIndex())
-        if not self.periods:
-            self.view_title.setText(
-                "ACORN returned courses, but no meeting times were recognized."
+        self.section_table = QTableWidget(0, 3)
+        self.section_table.setHorizontalHeaderLabels(["Course", "Type", "Section"])
+        self.section_table.verticalHeader().hide()
+        self.section_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.section_table.setSelectionMode(QAbstractItemView.NoSelection)
+        header = self.section_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        panel.addWidget(self.section_table, 1)
+        return box
+
+    def build_preference_panel(self):
+        box = QGroupBox("Preferences")
+        grid = QGridLayout(box)
+        grid.addWidget(QLabel("Session"), 0, 0)
+        self.session = QComboBox()
+        self.session.currentIndexChanged.connect(self.select_session)
+        grid.addWidget(self.session, 0, 1, 1, 5)
+
+        grid.addWidget(QLabel("Days off"), 1, 0)
+        self.day_boxes = []
+        for column, day in enumerate(DAY_NAMES, start=1):
+            check = QCheckBox(day[:3])
+            check.stateChanged.connect(self.remember)
+            self.day_boxes.append(check)
+            grid.addWidget(check, 1, column)
+
+        grid.addWidget(QLabel("Earliest class"), 2, 0)
+        self.earliest = QComboBox()
+        self.earliest.addItem("No limit", None)
+        for hour in range(8, 17):
+            self.earliest.addItem(f"{hour:02d}:00", hour * 60)
+        self.earliest.currentIndexChanged.connect(self.remember)
+        grid.addWidget(self.earliest, 2, 1, 1, 2)
+
+        self.generate_button = QPushButton("Generate")
+        self.generate_button.setEnabled(False)
+        self.generate_button.clicked.connect(self.generate)
+        grid.addWidget(self.generate_button, 2, 3)
+
+        self.previous_button = QPushButton("◀ Previous")
+        self.previous_button.setEnabled(False)
+        self.previous_button.clicked.connect(lambda: self.step(-1))
+        grid.addWidget(self.previous_button, 2, 4)
+
+        self.next_button = QPushButton("Next ▶")
+        self.next_button.setEnabled(False)
+        self.next_button.clicked.connect(lambda: self.step(1))
+        grid.addWidget(self.next_button, 2, 5)
+
+        self.export_button = QPushButton("Export PNG")
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self.export_png)
+        grid.addWidget(self.export_button, 3, 5)
+        return box
+
+    # -- background work ------------------------------------------------
+
+    def run(self, work, on_done, on_failed, sequence=0):
+        thread = QThread(self)
+        task = Task(sequence, work)
+        task.moveToThread(thread)
+        thread.started.connect(task.run)
+        task.done.connect(on_done)
+        task.failed.connect(on_failed)
+        task.done.connect(thread.quit)
+        task.failed.connect(thread.quit)
+        thread.finished.connect(lambda: self.job_finished(thread, task))
+        self.jobs.append((thread, task))
+        thread.start()
+
+    def job_finished(self, thread, task):
+        self.jobs = [job for job in self.jobs if job[0] is not thread]
+        task.deleteLater()
+        thread.deleteLater()
+
+    # -- search ---------------------------------------------------------
+
+    def search_later(self, _text):
+        self.search_timer.start(SEARCH_DELAY_MS)
+
+    def search(self):
+        term = self.search_input.text().strip()
+        if not term:
+            self.results.clear()
+            self.results.hide()
+            return
+
+        self.search_sequence += 1
+        self.run(
+            lambda: search_courses(term),
+            self.search_ready,
+            self.search_failed,
+            self.search_sequence,
+        )
+
+    def search_ready(self, sequence, matches):
+        # A slower earlier search must not overwrite newer results.
+        if sequence != self.search_sequence:
+            return
+        self.results.clear()
+        added = {offering.code for offering in self.offerings}
+        for match in matches:
+            suffix = "  (added)" if match.code in added else ""
+            self.results.addItem(match.label + suffix)
+            self.results.item(self.results.count() - 1).setData(
+                Qt.UserRole, match.code
+            )
+        self.results.setVisible(bool(matches))
+        if not matches:
+            self.status.setText("No course matches that search.")
+
+    def search_failed(self, sequence, message):
+        if sequence == self.search_sequence:
+            self.status.setText(message)
+
+    def add_highlighted(self):
+        item = self.results.currentItem() or self.results.item(0)
+        if item:
+            self.add_match(item)
+        else:
+            self.add_code(normalize_code(self.search_input.text()))
+
+    def add_match(self, item):
+        self.add_code(item.data(Qt.UserRole))
+
+    # -- course list ----------------------------------------------------
+
+    def add_code(self, code):
+        code = normalize_code(code)
+        if not code:
+            return
+        if any(offering.code == code for offering in self.offerings):
+            self.status.setText(f"{code} is already added.")
+            return
+
+        self.pending_courses += 1
+        self.status.setText(f"Loading {code}...")
+        self.run(
+            lambda: fetch_offerings(code),
+            self.course_loaded,
+            self.course_failed,
+        )
+
+    def course_loaded(self, _sequence, offerings):
+        self.pending_courses -= 1
+        self.offerings.extend(offerings)
+        self.search_input.clear()
+        self.results.clear()
+        self.results.hide()
+
+        code = offerings[0].code
+        sessions = sorted({offering.session for offering in offerings})
+        self.status.setText(
+            f"Added {code} — offered in "
+            + ", ".join(session_label(session) for session in sessions)
+            + "."
+        )
+        self.refresh_courses()
+        self.refresh_sessions()
+        self.remember()
+
+    def course_failed(self, _sequence, message):
+        self.pending_courses -= 1
+        self.status.setText(message)
+
+    def remove_course(self):
+        item = self.course_list.currentItem()
+        if not item:
+            self.status.setText("Select a course in the list first.")
+            return
+        code = item.data(Qt.UserRole)
+        self.offerings = [
+            offering for offering in self.offerings if offering.code != code
+        ]
+        self.pins = {
+            key: value
+            for key, value in self.pins.items()
+            if key[0].split()[0] != code
+        }
+        self.status.setText(f"Removed {code}.")
+        self.refresh_courses()
+        self.refresh_sessions()
+        self.remember()
+
+    def refresh_courses(self):
+        self.course_list.clear()
+        seen = set()
+        for offering in self.offerings:
+            if offering.code in seen:
+                continue
+            seen.add(offering.code)
+            self.course_list.addItem(offering.label)
+            self.course_list.item(self.course_list.count() - 1).setData(
+                Qt.UserRole, offering.code
             )
 
-    def select_period(self, index):
-        self.groups = self.periods[index] if 0 <= index < len(self.periods) else {}
-        self.generate_button.setEnabled(bool(self.groups))
-        self.view_button.setEnabled(bool(self.groups))
-        self.export_button.setEnabled(False)
+    # -- session and sections -------------------------------------------
+
+    def refresh_sessions(self, preferred=None):
+        target = self.session.currentData() if preferred is None else preferred
+        self.session.blockSignals(True)
+        self.session.clear()
+        for session in sorted({offering.session for offering in self.offerings}):
+            self.session.addItem(session_label(session), session)
+        if target is not None:
+            restored = self.session.findData(target)
+            if restored >= 0:
+                self.session.setCurrentIndex(restored)
+        self.session.blockSignals(False)
+        self.select_session(self.session.currentIndex())
+
+    def selected_offerings(self):
+        session = self.session.currentData()
+        return [offering for offering in self.offerings if offering.session == session]
+
+    def select_session(self, _index):
+        self.schedules = []
+        self.index = 0
         self.timetable.show_schedule([])
-        if self.groups:
-            self.view_title.setText("Choose View my courses or Generate.")
+        self.update_navigation()
+        self.refresh_sections()
 
-    def login_failed(self, message):
-        self.status.setText("Sign-in or course loading failed.")
-        self.view_title.setText(message)
-        self.login_button.setEnabled(True)
+        offerings = self.selected_offerings()
+        self.generate_button.setEnabled(bool(offerings))
+        if not offerings:
+            self.view_title.setText("No timetable yet.")
+            return
 
-    def view_courses(self):
-        schedule = [sections[0] for sections in self.groups.values() if sections]
-        self.timetable.show_schedule(schedule)
-        self.export_button.setEnabled(bool(schedule))
-        self.view_title.setText(f"{self.session.currentText()} · My courses")
+        missing = {offering.code for offering in self.offerings} - {
+            offering.code for offering in offerings
+        }
+        note = f" ({', '.join(sorted(missing))} not offered)" if missing else ""
+        self.view_title.setText(
+            f"{len(offerings)} course(s) in {self.session.currentText()}{note}."
+            " Choose Generate."
+        )
+        self.remember()
+
+    def refresh_sections(self):
+        groups = group_sections(self.selected_offerings())
+        self.section_table.setRowCount(len(groups))
+        for row, ((course, activity), sections) in enumerate(groups.items()):
+            self.section_table.setItem(row, 0, QTableWidgetItem(course))
+            self.section_table.setItem(row, 1, QTableWidgetItem(activity))
+
+            chooser = QComboBox()
+            chooser.addItem(f"{ANY_SECTION} ({len(sections)})", None)
+            for section in sorted(sections, key=lambda item: item.code):
+                chooser.addItem(
+                    f"{section.code} — {section_summary(section)}", section.code
+                )
+            pinned = chooser.findData(self.pins.get((course, activity)))
+            chooser.setCurrentIndex(max(0, pinned))
+            chooser.currentIndexChanged.connect(
+                lambda _index, key=(course, activity), widget=chooser: self.pin(
+                    key, widget.currentData()
+                )
+            )
+            self.section_table.setCellWidget(row, 2, chooser)
+
+    def pin(self, key, code):
+        if code:
+            self.pins[key] = code
+        else:
+            self.pins.pop(key, None)
+        self.remember()
+
+    # -- generation -----------------------------------------------------
 
     def generate(self):
+        groups = apply_pins(group_sections(self.selected_offerings()), self.pins)
         days_off = {
             index for index, box in enumerate(self.day_boxes) if box.isChecked()
         }
-        schedules = generate_timetables(
-            self.groups, days_off, self.earliest.currentData(), limit=1
+        earliest = self.earliest.currentData()
+        self.schedules = generate_timetables(
+            groups, days_off, earliest, limit=MAX_SCHEDULES
         )
-        if not schedules:
+        self.index = 0
+
+        if not self.schedules:
             self.timetable.show_schedule([])
-            self.export_button.setEnabled(False)
-            self.view_title.setText(
-                "No conflict-free timetable matches these preferences."
-            )
+            self.update_navigation()
+            blocked = blocked_groups(groups, days_off, earliest)
+            if blocked:
+                names = ", ".join(
+                    f"{course} {activity}" for course, activity in blocked
+                )
+                self.view_title.setText(f"No section of {names} fits these preferences.")
+            else:
+                self.view_title.setText(
+                    "Every combination of these sections has a time conflict."
+                )
             return
-        self.timetable.show_schedule(schedules[0])
-        self.export_button.setEnabled(True)
-        self.view_title.setText(f"{self.session.currentText()} · Generated timetable")
+
+        options = ", ".join(
+            f"{course} {activity} ×{len(sections)}"
+            for (course, activity), sections in groups.items()
+        )
+        self.status.setText(f"Section choices — {options}")
+        self.show_current()
+
+    def step(self, delta):
+        self.index = (self.index + delta) % len(self.schedules)
+        self.show_current()
+
+    def show_current(self):
+        self.timetable.show_schedule(self.schedules[self.index])
+        self.view_title.setText(
+            f"{self.session.currentText()} · Schedule {self.index + 1}"
+            f" of {len(self.schedules)}"
+        )
+        self.update_navigation()
+
+    def update_navigation(self):
+        has_many = len(self.schedules) > 1
+        self.previous_button.setEnabled(has_many)
+        self.next_button.setEnabled(has_many)
+        self.export_button.setEnabled(bool(self.schedules))
 
     def export_png(self):
-        name = self.session.currentText().replace(" · ", "-").replace("/", "-")
+        name = (
+            f"{self.session.currentText()}-schedule-{self.index + 1}"
+            .replace(" ", "-")
+            .replace("/", "-")
+            .replace("(", "")
+            .replace(")", "")
+        )
         path, _ = QFileDialog.getSaveFileName(
             self, "Export timetable", f"{name}.png", "PNG image (*.png)"
         )
@@ -375,11 +632,69 @@ class MainWindow(QMainWindow):
         else:
             self.status.setText("Could not export the timetable.")
 
-    def closeEvent(self, event):
-        if self.thread and self.thread.isRunning():
-            self.status.setText("Close the ACORN Chrome window before exiting.")
-            event.ignore()
+    # -- saved state ----------------------------------------------------
+
+    def restore(self):
+        config = load_config()
+        self.pins = decode_pins(config.get("pins"))
+        self.pending_session = config.get("session")
+
+        for index, box in enumerate(self.day_boxes):
+            box.blockSignals(True)
+            box.setChecked(index in set(config.get("days_off") or []))
+            box.blockSignals(False)
+        earliest = self.earliest.findData(config.get("earliest"))
+        if earliest >= 0:
+            self.earliest.blockSignals(True)
+            self.earliest.setCurrentIndex(earliest)
+            self.earliest.blockSignals(False)
+
+        codes = [code for code in config.get("courses") or [] if isinstance(code, str)]
+        if not codes:
+            self.pending_session = None
             return
+        self.status.setText(f"Restoring {len(codes)} saved course(s)...")
+        self.pending_courses += 1
+        self.run(lambda: fetch_many(codes), self.courses_restored, self.course_failed)
+
+    def courses_restored(self, _sequence, result):
+        self.pending_courses -= 1
+        offerings, failed = result
+        self.offerings.extend(offerings)
+        self.refresh_courses()
+        self.refresh_sessions(self.pending_session)
+        self.pending_session = None
+
+        restored_count = len({offering.code for offering in offerings})
+        message = f"Restored {restored_count} saved course(s)."
+        if failed:
+            message += f" Could not load {', '.join(failed)}."
+        self.status.setText(message)
+
+    def remember(self):
+        # Nothing is saved until the restore fetch has settled, so a failed
+        # start-up lookup cannot quietly erase the saved list.
+        if self.pending_courses:
+            return
+        save_config(
+            {
+                "courses": sorted({offering.code for offering in self.offerings}),
+                "session": self.session.currentData(),
+                "pins": encode_pins(self.pins),
+                "days_off": sorted(
+                    index
+                    for index, box in enumerate(self.day_boxes)
+                    if box.isChecked()
+                ),
+                "earliest": self.earliest.currentData(),
+            }
+        )
+
+    def closeEvent(self, event):
+        self.remember()
+        for thread, _task in list(self.jobs):
+            thread.quit()
+            thread.wait(2000)
         super().closeEvent(event)
 
 

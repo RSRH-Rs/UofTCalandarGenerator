@@ -1,26 +1,41 @@
+"""Course data and timetable generation.
+
+Sections come from the public U of T Timetable Builder (TTB) API, which lists
+every offered section of a course rather than only the one a student enrolled
+in. No ACORN sign-in and no personal data are involved.
+"""
+
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass
-from itertools import product
+from itertools import chain
 from pathlib import Path
-from urllib.parse import unquote
 
-BASE_URL = "https://acorn.utoronto.ca/sws/rest"
-SESSION_FILE = Path(__file__).with_name(".acorn_session.json")
-COURSE_RE = re.compile(r"\b[A-Z]{3,4}\d{2,3}[A-Z]\d(?:\s+[FYS])?\b")
-SECTION_RE = re.compile(r"\b(LEC|TUT|PRA|LAB|SEM)\s*(\d{1,4})\b")
-ACTIVITY_TYPES = {
-    "LECTURE": "LEC",
-    "TUTORIAL": "TUT",
-    "PRACTICAL": "PRA",
-    "LABORATORY": "LAB",
-    "SEMINAR": "SEM",
-}
+TTB_BASE = "https://api.easi.utoronto.ca/ttb"
+TTB_URL = f"{TTB_BASE}/getCoursesByCodeAndSectionCode"
+SEARCH_URL = f"{TTB_BASE}/getOptimizedMatchingCourseTitles"
+DIVISIONS_URL = f"{TTB_BASE}/getMatchingDivisions"
+SESSIONS_URL = f"{TTB_BASE}/current-session"
+
+COURSE_CODE_RE = re.compile(r"^[A-Z]{3}[A-Z0-9]\d{2}[A-Z]\d$")
 DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
+TERM_NAMES = {"9": "Fall", "1": "Winter", "5": "Summer"}
+SUB_SESSION_NAMES = {"F": "First", "S": "Second"}
+
+# Used only if the reference endpoints are unreachable, so that search still
+# covers the common cases instead of failing outright.
+FALLBACK_DIVISIONS = ("APSC", "ARTSC", "ERIN", "SCAR")
+
+# TTB can return tens of thousands of section combinations for a handful of
+# courses. Bound both the search itself and how many complete timetables are
+# kept before scoring, so the UI stays responsive.
+MAX_SEARCH_STEPS = 400_000
+MAX_CANDIDATES = 2_000
 
 
-class SessionExpired(RuntimeError):
+class CourseNotFound(RuntimeError):
     pass
 
 
@@ -40,140 +55,331 @@ class Section:
     meetings: tuple[Meeting, ...]
 
 
-class AcornClient:
-    def __init__(self, cookies, token: str):
-        import requests
+@dataclass(frozen=True)
+class Offering:
+    """One course as offered in one session, with all of its sections."""
 
-        if not token:
-            raise SessionExpired("ACORN session token is missing")
-        self.session = requests.Session()
-        if isinstance(cookies, list):
-            for cookie in cookies:
-                options = {"path": cookie.get("path", "/")}
-                if cookie.get("domain"):
-                    options["domain"] = cookie["domain"]
-                self.session.cookies.set(cookie["name"], cookie["value"], **options)
-        else:
-            self.session.cookies.update(cookies)
-        self.session.headers.update(
-            {"Accept": "application/json", "X-XSRF-TOKEN": unquote(token)}
-        )
+    course: str
+    title: str
+    campus: str
+    session: str
+    sections: tuple[Section, ...]
 
-    def _json(self, method: str, path: str, **kwargs):
-        response = self.session.request(
-            method, f"{BASE_URL}/{path}", timeout=20, **kwargs
-        )
-        if "/sws/rest/" not in response.url:
-            raise SessionExpired("Saved ACORN session has expired")
-        response.raise_for_status()
-        try:
-            return response.json()
-        except ValueError as error:
-            raise RuntimeError("ACORN returned an invalid session response") from error
+    @property
+    def code(self) -> str:
+        return self.course.split()[0]
 
-    def fetch_courses(self) -> list:
-        registrations = self._json("GET", "enrolment/current-registrations")
-        if not isinstance(registrations, list):
-            raise RuntimeError("ACORN returned an unexpected registration response")
-
-        sessions = []
-
-        for registration in registrations:
-            if not isinstance(registration, dict):
-                continue
-            session_code = _pick(registration, "sessionCode", "session.code")
-            post = registration.get("post") or {}
-            post_code = post.get("code") if isinstance(post, dict) else post
-            post_code = post_code or _pick(
-                registration, "postCode", "primaryPostCode"
-            )
-            if not session_code or not post_code:
-                continue
-
-            payload = {"code": session_code, "posts": [{"code": post_code}]}
-            timetable = self._json("POST", "timetable/viewTimetable", json=payload)
-            label = (
-                _pick(registration, "sessionDescription", "sessionName")
-                or session_code
-            )
-            sessions.append({"label": str(label), "data": [registration, timetable]})
-
-        if not sessions:
-            raise RuntimeError("ACORN returned no supported registration sessions")
-        return sessions
+    @property
+    def label(self) -> str:
+        return f"{self.course} — {self.title}"
 
 
-def load_session():
-    try:
-        data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
-        cookies = data.get("cookies")
-        return cookies if isinstance(cookies, (dict, list)) and cookies else None
-    except (OSError, ValueError, AttributeError):
-        return None
+@dataclass(frozen=True)
+class CourseMatch:
+    """A search hit: enough to show a suggestion and then look the course up."""
+
+    code: str
+    term: str
+    title: str
+    division: str
+
+    @property
+    def label(self) -> str:
+        return f"{self.code} {self.term} — {self.title}  ·  {self.division}"
 
 
-def save_session(cookies):
-    SESSION_FILE.write_text(
-        json.dumps({"cookies": cookies}, indent=2), encoding="utf-8"
+def fetch_offerings(code: str, timeout: int = 20) -> list[Offering]:
+    """Look up every offering of ``code`` (e.g. ``CSC108H1``) across sessions."""
+    import requests
+
+    code = normalize_code(code)
+    if not COURSE_CODE_RE.match(code):
+        raise CourseNotFound(f"{code} is not a valid course code (e.g. CSC108H1)")
+
+    response = requests.get(
+        f"{TTB_URL}/{code}", timeout=timeout, headers={"Accept": "application/json"}
     )
+    if response.status_code == 404:
+        raise CourseNotFound(f"{code} is not in the Timetable Builder catalogue")
+    response.raise_for_status()
     try:
-        os.chmod(SESSION_FILE, 0o600)
+        payload = response.json()
+    except ValueError as error:
+        raise RuntimeError("Timetable Builder returned an invalid response") from error
+
+    offerings = parse_offerings(payload)
+    if not offerings:
+        raise CourseNotFound(f"{code} has no scheduled sections")
+    return offerings
+
+
+def fetch_many(codes, timeout: int = 20) -> tuple[list[Offering], list[str]]:
+    """Look up several codes, reporting the ones that could not be loaded."""
+    offerings, failed = [], []
+    for code in codes:
+        try:
+            offerings.extend(fetch_offerings(code, timeout=timeout))
+        except Exception:
+            failed.append(normalize_code(code))
+    return offerings, failed
+
+
+def search_courses(term: str, limit: int = 40, timeout: int = 15) -> list[CourseMatch]:
+    """Type-ahead search over course codes, titles and descriptions."""
+    import requests
+
+    term = str(term).strip()
+    if not term:
+        return []
+
+    divisions, sessions = _reference_data(timeout)
+    response = requests.get(
+        SEARCH_URL,
+        params={
+            "term": term,
+            "divisions": list(divisions),
+            "sessions": list(sessions),
+            # The endpoint rejects the request without both thresholds; they
+            # bound how many ranked matches come back.
+            "lowerThreshold": 50,
+            "upperThreshold": 200,
+        },
+        timeout=timeout,
+        headers={"Accept": "application/json"},
+    )
+    if response.status_code == 404:
+        return []
+    response.raise_for_status()
+
+    matches = (
+        ((response.json() or {}).get("payload") or {}).get("codesAndTitles") or []
+    )
+    results = []
+    for match in matches:
+        if not isinstance(match, dict) or not match.get("code"):
+            continue
+        division = match.get("division") or {}
+        results.append(
+            CourseMatch(
+                code=str(match["code"]).strip(),
+                term=str(match.get("sectionCode") or "").strip(),
+                title=str(match.get("name") or "").strip(),
+                division=str(division.get("code") or "").strip(),
+            )
+        )
+        if len(results) >= limit:
+            break
+    return results
+
+
+_REFERENCE: dict = {}
+
+
+def _reference_data(timeout: int) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Divisions and session codes that search must be scoped to.
+
+    Both come from TTB itself so that a new academic session needs no code
+    change; the result is cached for the life of the process.
+    """
+    import requests
+
+    if _REFERENCE:
+        return _REFERENCE["divisions"], _REFERENCE["sessions"]
+
+    headers = {"Accept": "application/json"}
+    try:
+        payload = requests.get(DIVISIONS_URL, timeout=timeout, headers=headers).json()
+        divisions = tuple(
+            str(item["value"])
+            for item in payload.get("payload") or []
+            if item.get("value")
+        )
+    except Exception:
+        divisions = ()
+
+    try:
+        payload = requests.get(SESSIONS_URL, timeout=timeout, headers=headers).json()
+        sessions = tuple(
+            str(item["value"])
+            for item in payload.get("payload") or []
+            # Header rows are group captions ("Fall-Winter 2026-2027"), not
+            # session codes.
+            if item.get("value") and not item.get("header")
+        )
+    except Exception:
+        sessions = ()
+
+    _REFERENCE["divisions"] = divisions or FALLBACK_DIVISIONS
+    _REFERENCE["sessions"] = sessions
+    return _REFERENCE["divisions"], _REFERENCE["sessions"]
+
+
+def normalize_code(code: str) -> str:
+    """TTB matches course codes exactly, so strip spaces and force upper case."""
+    return "".join(str(code).split()).upper()
+
+
+def parse_offerings(payload) -> list[Offering]:
+    courses = (
+        ((payload or {}).get("payload") or {}).get("pageableCourse") or {}
+    ).get("courses") or []
+
+    offerings = []
+    for course in courses:
+        if not isinstance(course, dict) or course.get("cancelInd") == "Y":
+            continue
+        code = str(course.get("code") or "").strip()
+        term = str(course.get("sectionCode") or "").strip()
+        if not code:
+            continue
+        name = f"{code} {term}".strip()
+
+        sections = []
+        for raw in course.get("sections") or []:
+            section = _parse_section(raw, name)
+            if section:
+                sections.append(section)
+        if not sections:
+            continue
+
+        for session in course.get("sessions") or [""]:
+            offerings.append(
+                Offering(
+                    course=name,
+                    title=str(course.get("name") or "").strip(),
+                    campus=str(course.get("campus") or "").strip(),
+                    session=str(session),
+                    sections=tuple(sections),
+                )
+            )
+    return offerings
+
+
+def group_sections(
+    offerings: list[Offering],
+) -> dict[tuple[str, str], list[Section]]:
+    """Collect sections into the choices the generator picks between.
+
+    One group per (course, activity): pick exactly one LEC, one TUT, and so on.
+    """
+    groups: dict[tuple[str, str], dict[str, Section]] = {}
+    for section in chain.from_iterable(o.sections for o in offerings):
+        groups.setdefault((section.course, section.activity), {})[
+            section.code
+        ] = section
+    return {key: list(value.values()) for key, value in sorted(groups.items())}
+
+
+def apply_pins(
+    groups: dict[tuple[str, str], list[Section]],
+    pins: dict[tuple[str, str], str] | None,
+) -> dict[tuple[str, str], list[Section]]:
+    """Narrow a group to the one section the user pinned, where they pinned one.
+
+    A pin naming a section that is no longer offered is ignored rather than
+    left to empty the group, which would make every timetable impossible.
+    """
+    pins = pins or {}
+    narrowed = {}
+    for key, sections in groups.items():
+        pinned = [s for s in sections if s.code == pins.get(key)]
+        narrowed[key] = pinned or sections
+    return narrowed
+
+
+def section_summary(section: Section) -> str:
+    return ", ".join(
+        f"{DAY_NAMES[meeting.day][:3]} {clock(meeting.start)}–{clock(meeting.end)}"
+        for meeting in section.meetings
+    )
+
+
+def config_path() -> Path:
+    """Where the saved course list lives.
+
+    A frozen one-file build unpacks into a temp directory that is wiped on
+    exit, so ``__file__`` is useless there; use a per-user app data folder.
+    """
+    if getattr(sys, "frozen", False):
+        base = Path(
+            os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or Path.home()
+        ) / "UofT-Timetable-Generator"
+        base.mkdir(parents=True, exist_ok=True)
+        return base / "courses.json"
+    return Path(__file__).with_name(".ttb_courses.json")
+
+
+def load_config() -> dict:
+    try:
+        config = json.loads(config_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
+def save_config(config: dict) -> None:
+    try:
+        config_path().write_text(json.dumps(config, indent=2), encoding="utf-8")
     except OSError:
         pass
 
 
-def clear_session():
-    try:
-        SESSION_FILE.unlink()
-    except FileNotFoundError:
-        pass
+def encode_pins(pins: dict[tuple[str, str], str]) -> dict[str, str]:
+    """JSON has no tuple keys, so flatten ``(course, activity)`` to a string."""
+    return {f"{course}|{activity}": code for (course, activity), code in pins.items()}
 
 
-def session_token(cookies) -> str | None:
-    if isinstance(cookies, dict):
-        return cookies.get("XSRF-TOKEN")
-    return next(
-        (
-            cookie.get("value")
-            for cookie in cookies
-            if cookie.get("name") == "XSRF-TOKEN"
-        ),
-        None,
-    )
+def decode_pins(stored) -> dict[tuple[str, str], str]:
+    pins = {}
+    for key, code in (stored or {}).items():
+        course, _, activity = str(key).partition("|")
+        if course and activity and isinstance(code, str):
+            pins[(course, activity)] = code
+    return pins
 
 
-def extract_sections(data) -> dict[tuple[str, str], list[Section]]:
-    """Extract course section choices from ACORN's nested responses."""
-    groups: dict[tuple[str, str], dict[str, Section]] = {}
+def session_label(session: str) -> str:
+    """``20269`` -> ``Fall 2026``; ``20265F`` -> ``Summer 2026 (First)``."""
+    match = re.fullmatch(r"(\d{4})(\d)([FS]?)", str(session))
+    if not match:
+        return str(session) or "Unknown session"
+    year, term, sub = match.groups()
+    label = f"{TERM_NAMES.get(term, 'Session')} {year}"
+    return f"{label} ({SUB_SESSION_NAMES[sub]})" if sub else label
 
-    def walk(value, course=""):
-        if isinstance(value, list):
-            for item in value:
-                walk(item, course)
-            return
-        if not isinstance(value, dict):
-            return
 
-        current_course = _course_code(value) or course
-        section_code = _section_code(value)
-        meetings = _meetings(value) if section_code and current_course else []
+def allowed_sections(
+    sections: list[Section],
+    days_off: set[int] | None = None,
+    earliest: int | None = None,
+) -> list[Section]:
+    days_off = days_off or set()
+    return [
+        section
+        for section in sections
+        if all(
+            meeting.day not in days_off
+            and (earliest is None or meeting.start >= earliest)
+            for meeting in section.meetings
+        )
+    ]
 
-        if meetings:
-            activity = section_code.split()[0]
-            section = Section(
-                current_course,
-                activity,
-                section_code,
-                tuple(sorted(set(meetings), key=_meeting_key)),
-            )
-            groups.setdefault((current_course, activity), {})[section_code] = section
-            return
 
-        for child in value.values():
-            walk(child, current_course)
+def blocked_groups(
+    groups: dict[tuple[str, str], list[Section]],
+    days_off: set[int] | None = None,
+    earliest: int | None = None,
+) -> list[tuple[str, str]]:
+    """Groups whose every section is ruled out by the preferences.
 
-    walk(data)
-    return {key: list(sections.values()) for key, sections in groups.items()}
+    A single one of these makes the whole search impossible, so naming them is
+    far more useful than reporting that no timetable was found.
+    """
+    return [
+        key
+        for key, sections in groups.items()
+        if not allowed_sections(sections, days_off, earliest)
+    ]
 
 
 def generate_timetables(
@@ -182,50 +388,47 @@ def generate_timetables(
     earliest: int | None = None,
     limit: int = 20,
 ) -> list[list[Section]]:
-    days_off = days_off or set()
+    """Return up to ``limit`` conflict-free timetables, best-scoring first."""
     choices = []
-
     for sections in groups.values():
-        allowed = [
-            section
-            for section in sections
-            if all(
-                meeting.day not in days_off
-                and (earliest is None or meeting.start >= earliest)
-                for meeting in section.meetings
-            )
-        ]
+        allowed = allowed_sections(sections, days_off, earliest)
         if not allowed:
             return []
         choices.append(allowed)
 
-    schedules = []
-    for combination in product(*choices):
-        meetings = [meeting for section in combination for meeting in section.meetings]
-        if _has_conflict(meetings):
-            continue
-        schedules.append(list(combination))
-        if len(schedules) >= max(limit * 50, 500):
-            break
+    # Groups with the fewest options first: conflicts surface earlier, so whole
+    # branches get pruned instead of being enumerated.
+    choices.sort(key=len)
 
+    schedules: list[list[Section]] = []
+    steps = MAX_SEARCH_STEPS
+
+    def walk(index: int, chosen: list[Section], meetings: list[Meeting]) -> None:
+        nonlocal steps
+        if index == len(choices):
+            schedules.append(list(chosen))
+            return
+        for section in choices[index]:
+            if steps <= 0 or len(schedules) >= MAX_CANDIDATES:
+                return
+            steps -= 1
+            if any(
+                _overlaps(meeting, placed)
+                for meeting in section.meetings
+                for placed in meetings
+            ):
+                continue
+            count = len(section.meetings)
+            chosen.append(section)
+            meetings.extend(section.meetings)
+            walk(index + 1, chosen, meetings)
+            chosen.pop()
+            if count:
+                del meetings[-count:]
+
+    walk(0, [], [])
     schedules.sort(key=_schedule_score)
     return schedules[:limit]
-
-
-def split_periods(groups: dict[tuple[str, str], list[Section]]):
-    terms = {course.rsplit(" ", 1)[-1] for course, _ in groups}
-    periods = []
-    for term in ("F", "S"):
-        if term not in terms:
-            continue
-        selected = {
-            key: sections
-            for key, sections in groups.items()
-            if key[0].rsplit(" ", 1)[-1] in {term, "Y"}
-            or key[0].rsplit(" ", 1)[-1] not in {"F", "S", "Y"}
-        }
-        periods.append((f"{term}/Y courses", selected))
-    return periods or [("All courses", groups)]
 
 
 def format_timetable(schedule: list[Section], number: int) -> str:
@@ -245,205 +448,90 @@ def format_timetable(schedule: list[Section], number: int) -> str:
         for meeting, section in daily:
             location = f" · {meeting.location}" if meeting.location else ""
             lines.append(
-                f"  {_clock(meeting.start)}–{_clock(meeting.end)}  "
+                f"  {clock(meeting.start)}–{clock(meeting.end)}  "
                 f"{section.course} {section.code}{location}"
             )
     return "\n".join(lines)
 
 
-def _course_code(value: dict) -> str:
-    for key in ("courseCode", "course", "code", "name"):
-        match = COURSE_RE.search(str(_pick(value, key) or "").upper())
-        if match:
-            code = " ".join(match.group().split())
-            term = str(_pick(value, "sectionCode") or "").upper()
-            return f"{code} {term}" if term in {"F", "S", "Y"} else code
-    return ""
+def clock(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
-def _section_code(value: dict) -> str:
-    for key in (
-        "sectionCode",
-        "activityCode",
-        "academicActivityCode",
-        "teachMethod",
-        "activity",
-        "code",
-        "name",
-    ):
-        match = SECTION_RE.search(str(_pick(value, key) or "").upper())
-        if match:
-            return f"{match.group(1)} {match.group(2)}"
+def _parse_section(raw, course: str) -> Section | None:
+    if not isinstance(raw, dict) or raw.get("cancelInd") == "Y":
+        return None
+    activity = str(raw.get("teachMethod") or "").strip().upper()
+    number = str(raw.get("sectionNumber") or "").strip()
+    if not activity or not number:
+        return None
 
-    activity = str(
-        _pick(
-            value,
-            "activityType",
-            "activityTypeCode",
-            "academicActivityCode",
-            "teachMethod",
-            "teachingMethod",
-            "teachingMethodCode",
-            "type",
-        )
-        or ""
-    ).upper()
-    activity = ACTIVITY_TYPES.get(activity, activity[:3])
-    number = _pick(
-        value, "sectionNumber", "number", "section", "activityCode"
-    )
-    if activity in set(ACTIVITY_TYPES.values()) and number is not None:
-        return f"{activity} {str(number).strip()}"
-    return ""
-
-
-def _meetings(value: dict) -> list[Meeting]:
     meetings = []
-
-    def walk(item):
-        if isinstance(item, list):
-            for child in item:
-                walk(child)
-            return
-        if not isinstance(item, dict):
-            return
-
-        meeting = _meeting(item)
+    for raw_meeting in raw.get("meetingTimes") or []:
+        meeting = _parse_meeting(raw_meeting)
         if meeting:
-            meetings.extend(meeting)
-            return
-        for child in item.values():
-            walk(child)
+            meetings.append(meeting)
+    if not meetings:
+        # Asynchronous or to-be-announced sections have nothing to schedule
+        # around, so they cannot take part in conflict detection.
+        return None
 
-    walk(value)
-    return meetings
+    return Section(
+        course=course,
+        activity=activity,
+        code=f"{activity} {number}",
+        meetings=tuple(sorted(set(meetings), key=_meeting_key)),
+    )
 
 
-def _meeting(value: dict) -> list[Meeting]:
-    lowered = {str(key).lower(): item for key, item in value.items()}
-    day_value = next(
-        (
-            lowered[key]
-            for key in (
-                "meetingdayofweek",
-                "dayofweekcode",
-                "weekdaycode",
-                "dayofweek",
-                "weekday",
-                "meetingday",
-                "day",
-                "days",
-            )
-            if key in lowered
-        ),
-        None,
-    )
-    start = next(
-        (
-            lowered[key]
-            for key in (
-                "meetingstarttime",
-                "starttime",
-                "begintime",
-                "start",
-            )
-            if key in lowered
-        ),
-        None,
-    )
-    end = next(
-        (
-            lowered[key]
-            for key in (
-                "meetingendtime",
-                "endtime",
-                "finishtime",
-                "end",
-            )
-            if key in lowered
-        ),
-        None,
-    )
-    display_time = lowered.get("displaytime")
-    display_match = re.search(
-        r"(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})",
-        str(display_time),
-    )
-    if display_match:
-        start_minutes, end_minutes = map(_time, display_match.groups())
-        if start_minutes < 8 * 60:
-            start_minutes += 12 * 60
-        while end_minutes <= start_minutes:
-            end_minutes += 12 * 60
-    else:
-        start_minutes, end_minutes = _time(start), _time(end)
-    if day_value is None or start_minutes is None or end_minutes is None:
-        return []
-
-    if isinstance(day_value, dict):
-        day_value = _pick(day_value, "dayName", "dayCode", "index")
-
-    location = next(
-        (
-            str(lowered[key]).strip()
-            for key in ("location", "room", "building")
-            if key in lowered and isinstance(lowered[key], (str, int))
-        ),
-        "",
-    )
-    days = (
-        day_value if isinstance(day_value, list) else re.split(r"[,/]+", str(day_value))
-    )
-    return [
-        Meeting(day, start_minutes, end_minutes, location)
-        for raw_day in days
-        if (day := _day(raw_day)) is not None
-    ]
+def _parse_meeting(raw) -> Meeting | None:
+    if not isinstance(raw, dict):
+        return None
+    start, end = raw.get("start") or {}, raw.get("end") or {}
+    day = _day(start.get("day"))
+    start_minutes = _minutes(start.get("millisofday"))
+    end_minutes = _minutes(end.get("millisofday"))
+    if day is None or start_minutes is None or end_minutes is None:
+        return None
+    if end_minutes <= start_minutes:
+        return None
+    return Meeting(day, start_minutes, end_minutes, _location(raw.get("building")))
 
 
 def _day(value) -> int | None:
-    if isinstance(value, int) and 0 <= value <= 4:
-        return value
-    text = str(value).strip().upper()
-    aliases = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4}
-    if text[:2] in aliases:
-        return aliases[text[:2]]
-    for index, name in enumerate(DAY_NAMES):
-        if text.startswith(name[:3].upper()):
-            return index
-    return None
-
-
-def _time(value) -> int | None:
-    if value is None:
+    """TTB numbers days Monday=1 … Sunday=7; weekends have no grid column."""
+    if not isinstance(value, int) or not 1 <= value <= 5:
         return None
-    if isinstance(value, int):
-        return value if value < 24 * 60 else None
-    text = str(value).strip().upper().replace(" ", "")
-    match = re.search(r"(\d{1,2}):(\d{2})(AM|PM)?", text)
-    if not match:
-        digits = re.fullmatch(r"\d{3,4}", text)
-        if not digits:
-            return None
-        hour, minute = int(text[:-2]), int(text[-2:])
-        return hour * 60 + minute if hour < 24 and minute < 60 else None
-    hour, minute = int(match.group(1)), int(match.group(2))
-    suffix = match.group(3)
-    if suffix:
-        hour = hour % 12 + (12 if suffix == "PM" else 0)
-    return hour * 60 + minute
+    return value - 1
 
 
-def _has_conflict(meetings: list[Meeting]) -> bool:
-    for index, first in enumerate(meetings):
-        for second in meetings[index + 1 :]:
-            if (
-                first.day == second.day
-                and first.start < second.end
-                and second.start < first.end
-            ):
-                return True
-    return False
+def _minutes(value) -> int | None:
+    if not isinstance(value, int) or not 0 <= value < 24 * 60 * 60 * 1000:
+        return None
+    return value // 60_000
+
+
+def _location(building) -> str:
+    if not isinstance(building, dict):
+        return ""
+    code = _room_part(building.get("buildingCode"))
+    room = _room_part(building.get("buildingRoomNumber"))
+    suffix = _room_part(building.get("buildingRoomSuffix"))
+    return " ".join(part for part in (code, room + suffix) if part)
+
+
+def _room_part(value) -> str:
+    """TTB uses runs of dashes as a placeholder for an unassigned room."""
+    text = str(value or "").strip()
+    return "" if set(text) <= {"-"} else text
+
+
+def _overlaps(first: Meeting, second: Meeting) -> bool:
+    return (
+        first.day == second.day
+        and first.start < second.end
+        and second.start < first.end
+    )
 
 
 def _schedule_score(schedule: list[Section]):
@@ -464,22 +552,3 @@ def _schedule_score(schedule: list[Section]):
 
 def _meeting_key(meeting: Meeting):
     return meeting.day, meeting.start, meeting.end, meeting.location
-
-
-def _clock(minutes: int) -> str:
-    return f"{minutes // 60:02d}:{minutes % 60:02d}"
-
-
-def _pick(value: dict, *keys):
-    lowered = {str(key).lower(): item for key, item in value.items()}
-    for key in keys:
-        if "." in key:
-            parent, child = key.split(".", 1)
-            nested = lowered.get(parent.lower())
-            if isinstance(nested, dict):
-                result = _pick(nested, child)
-                if result is not None:
-                    return result
-        elif key.lower() in lowered:
-            return lowered[key.lower()]
-    return None

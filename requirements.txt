@@ -1,3 +1,2 @@
 PyQt5>=5.15
 requests>=2.31
-selenium>=4.20

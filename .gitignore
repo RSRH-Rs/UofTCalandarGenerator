@@ -1,4 +1,9 @@
 __pycache__/
 *.pyc
-tests/
-.acorn_session.json
+
+# PyInstaller output (the .spec is tracked; these are generated)
+build/
+dist/
+
+# Locally saved course list, pinned sections and preferences
+.ttb_courses.json
