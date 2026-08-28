@@ -12,8 +12,9 @@ pip install -r requirements.txt
 python gui.py
 ```
 
-Click **Sign in to ACORN**, then complete UTORid and Duo sign-in in the Chrome
-window. Credentials and cookies are not saved to disk.
+Click **Load courses**. The app reuses `.acorn_session.json` when the saved
+session is valid; otherwise, complete UTORid and Duo sign-in in Chrome. The
+password is never stored. Delete `.acorn_session.json` to forget the session.
 
 The app reads ACORN's current-registration and timetable APIs. ACORN is an
 internal service and may change its response format; this project is not

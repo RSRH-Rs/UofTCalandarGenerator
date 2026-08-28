@@ -15,15 +15,21 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from utils import (
     AcornClient,
     DAY_NAMES,
+    clear_session,
     extract_sections,
     format_timetable,
     generate_timetables,
+    load_session,
+    save_session,
+    session_token,
     split_periods,
 )
 
@@ -46,6 +52,15 @@ class LoginWorker(QObject):
     failed = pyqtSignal(str)
 
     def run(self):
+        cached = load_session()
+        if cached:
+            try:
+                sessions = AcornClient(cached, session_token(cached)).fetch_courses()
+                self.finished.emit({"sessions": sessions, "cached": True})
+                return
+            except Exception:
+                clear_session()
+
         options = Options()
         options.add_argument("--disable-notifications")
         driver = None
@@ -53,18 +68,16 @@ class LoginWorker(QObject):
             driver = webdriver.Chrome(options=options)
             driver.get("https://acorn.utoronto.ca/")
 
-            # The user completes UTORid and Duo in the browser.
+            # The logout link only appears after ACORN authentication finishes.
             WebDriverWait(driver, 300).until(
-                lambda browser: "/sws/" in browser.current_url
-                and any(
-                    cookie["name"] == "XSRF-TOKEN" for cookie in browser.get_cookies()
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, 'a[href="auth/logout"]')
                 )
             )
-            cookies = {
-                cookie["name"]: cookie["value"] for cookie in driver.get_cookies()
-            }
-            payloads = AcornClient(cookies, cookies["XSRF-TOKEN"]).fetch_courses()
-            self.finished.emit(payloads)
+            cookies = driver.get_cookies()
+            sessions = AcornClient(cookies, session_token(cookies)).fetch_courses()
+            save_session(cookies)
+            self.finished.emit({"sessions": sessions, "cached": False})
         except Exception as error:
             self.failed.emit(str(error))
         finally:
@@ -89,8 +102,8 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
         self.setCentralWidget(root)
 
-        self.status = QLabel("Sign in to ACORN to load your courses.")
-        self.login_button = QPushButton("Sign in to ACORN")
+        self.status = QLabel("Load your ACORN courses.")
+        self.login_button = QPushButton("Load courses")
         self.login_button.clicked.connect(self.login)
         layout.addWidget(self.status)
         layout.addWidget(self.login_button)
@@ -129,7 +142,7 @@ class MainWindow(QMainWindow):
 
     def login(self):
         self.login_button.setEnabled(False)
-        self.status.setText("Complete UTORid and Duo sign-in in the Chrome window...")
+        self.status.setText("Checking saved session...")
 
         self.thread = QThread(self)
         self.worker = LoginWorker()
@@ -144,7 +157,8 @@ class MainWindow(QMainWindow):
         self.thread.finished.connect(self.thread.deleteLater)
         self.thread.start()
 
-    def login_finished(self, sessions):
+    def login_finished(self, result):
+        sessions = result["sessions"]
         self.periods = []
         self.session.clear()
         courses = set()
@@ -156,7 +170,8 @@ class MainWindow(QMainWindow):
                 self.session.addItem(f"{session['label']} · {period_name}")
 
         self.status.setText(
-            f"Loaded {len(courses)} courses in {len(self.periods)} periods."
+            f"Loaded {len(courses)} courses in {len(self.periods)} periods"
+            f" using {'saved session' if result['cached'] else 'new login'}."
         )
         self.login_button.setEnabled(True)
         self.select_period(self.session.currentIndex())

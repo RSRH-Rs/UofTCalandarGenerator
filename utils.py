@@ -1,9 +1,13 @@
+import json
+import os
 import re
 from dataclasses import dataclass
 from itertools import product
+from pathlib import Path
 from urllib.parse import unquote
 
 BASE_URL = "https://acorn.utoronto.ca/sws/rest"
+SESSION_FILE = Path(__file__).with_name(".acorn_session.json")
 COURSE_RE = re.compile(r"\b[A-Z]{3,4}\d{2,3}[A-Z]\d(?:\s+[FYS])?\b")
 SECTION_RE = re.compile(r"\b(LEC|TUT|PRA|LAB|SEM)\s*(\d{1,4})\b")
 ACTIVITY_TYPES = {
@@ -14,6 +18,10 @@ ACTIVITY_TYPES = {
     "SEMINAR": "SEM",
 }
 DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
+
+
+class SessionExpired(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -33,11 +41,20 @@ class Section:
 
 
 class AcornClient:
-    def __init__(self, cookies: dict, token: str):
+    def __init__(self, cookies, token: str):
         import requests
 
+        if not token:
+            raise SessionExpired("ACORN session token is missing")
         self.session = requests.Session()
-        self.session.cookies.update(cookies)
+        if isinstance(cookies, list):
+            for cookie in cookies:
+                options = {"path": cookie.get("path", "/")}
+                if cookie.get("domain"):
+                    options["domain"] = cookie["domain"]
+                self.session.cookies.set(cookie["name"], cookie["value"], **options)
+        else:
+            self.session.cookies.update(cookies)
         self.session.headers.update(
             {"Accept": "application/json", "X-XSRF-TOKEN": unquote(token)}
         )
@@ -46,6 +63,8 @@ class AcornClient:
         response = self.session.request(
             method, f"{BASE_URL}/{path}", timeout=20, **kwargs
         )
+        if "/sws/rest/" not in response.url:
+            raise SessionExpired("Saved ACORN session has expired")
         response.raise_for_status()
         try:
             return response.json()
@@ -62,22 +81,65 @@ class AcornClient:
         for registration in registrations:
             if not isinstance(registration, dict):
                 continue
-            session_code = registration.get("sessionCode")
+            session_code = _pick(registration, "sessionCode", "session.code")
             post = registration.get("post") or {}
-            post_code = post.get("code")
+            post_code = post.get("code") if isinstance(post, dict) else post
+            post_code = post_code or _pick(
+                registration, "postCode", "primaryPostCode"
+            )
             if not session_code or not post_code:
                 continue
 
             payload = {"code": session_code, "posts": [{"code": post_code}]}
             timetable = self._json("POST", "timetable/viewTimetable", json=payload)
             label = (
-                registration.get("sessionDescription")
-                or registration.get("sessionName")
+                _pick(registration, "sessionDescription", "sessionName")
                 or session_code
             )
             sessions.append({"label": str(label), "data": [registration, timetable]})
 
+        if not sessions:
+            raise RuntimeError("ACORN returned no supported registration sessions")
         return sessions
+
+
+def load_session():
+    try:
+        data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
+        cookies = data.get("cookies")
+        return cookies if isinstance(cookies, (dict, list)) and cookies else None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def save_session(cookies):
+    SESSION_FILE.write_text(
+        json.dumps({"cookies": cookies}, indent=2), encoding="utf-8"
+    )
+    try:
+        os.chmod(SESSION_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def clear_session():
+    try:
+        SESSION_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def session_token(cookies) -> str | None:
+    if isinstance(cookies, dict):
+        return cookies.get("XSRF-TOKEN")
+    return next(
+        (
+            cookie.get("value")
+            for cookie in cookies
+            if cookie.get("name") == "XSRF-TOKEN"
+        ),
+        None,
+    )
 
 
 def extract_sections(data) -> dict[tuple[str, str], list[Section]]:
@@ -191,7 +253,7 @@ def format_timetable(schedule: list[Section], number: int) -> str:
 
 def _course_code(value: dict) -> str:
     for key in ("courseCode", "course", "code", "name"):
-        match = COURSE_RE.search(str(value.get(key, "")).upper())
+        match = COURSE_RE.search(str(_pick(value, key) or "").upper())
         if match:
             return " ".join(match.group().split())
     return ""
@@ -206,20 +268,24 @@ def _section_code(value: dict) -> str:
         "code",
         "name",
     ):
-        match = SECTION_RE.search(str(value.get(key, "")).upper())
+        match = SECTION_RE.search(str(_pick(value, key) or "").upper())
         if match:
             return f"{match.group(1)} {match.group(2)}"
 
     activity = str(
-        value.get("activityType")
-        or value.get("activityTypeCode")
-        or value.get("academicActivityCode")
-        or value.get("teachingMethod")
-        or value.get("type")
+        _pick(
+            value,
+            "activityType",
+            "activityTypeCode",
+            "academicActivityCode",
+            "teachingMethod",
+            "teachingMethodCode",
+            "type",
+        )
         or ""
     ).upper()
     activity = ACTIVITY_TYPES.get(activity, activity[:3])
-    number = value.get("sectionNumber") or value.get("section")
+    number = _pick(value, "sectionNumber", "section", "activityCode")
     if activity in set(ACTIVITY_TYPES.values()) and number is not None:
         return f"{activity} {str(number).strip()}"
     return ""
@@ -254,6 +320,8 @@ def _meeting(value: dict) -> list[Meeting]:
             lowered[key]
             for key in (
                 "meetingdayofweek",
+                "dayofweekcode",
+                "weekdaycode",
                 "dayofweek",
                 "weekday",
                 "meetingday",
@@ -333,7 +401,11 @@ def _time(value) -> int | None:
     text = str(value).strip().upper().replace(" ", "")
     match = re.search(r"(\d{1,2}):(\d{2})(AM|PM)?", text)
     if not match:
-        return None
+        digits = re.fullmatch(r"\d{3,4}", text)
+        if not digits:
+            return None
+        hour, minute = int(text[:-2]), int(text[-2:])
+        return hour * 60 + minute if hour < 24 and minute < 60 else None
     hour, minute = int(match.group(1)), int(match.group(2))
     suffix = match.group(3)
     if suffix:
@@ -375,3 +447,18 @@ def _meeting_key(meeting: Meeting):
 
 def _clock(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _pick(value: dict, *keys):
+    lowered = {str(key).lower(): item for key, item in value.items()}
+    for key in keys:
+        if "." in key:
+            parent, child = key.split(".", 1)
+            nested = lowered.get(parent.lower())
+            if isinstance(nested, dict):
+                result = _pick(nested, child)
+                if result is not None:
+                    return result
+        elif key.lower() in lowered:
+            return lowered[key.lower()]
+    return None
