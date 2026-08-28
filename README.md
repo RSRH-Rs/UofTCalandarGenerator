@@ -18,7 +18,8 @@ password is never stored. Delete `.acorn_session.json` to forget the session.
 
 Use **View my courses** to display every meeting returned for your enrolled
 activities. **Generate** applies the selected days off and earliest class time,
-then displays the best matching timetable in a weekly grid.
+then displays the best matching timetable in a weekly grid. **Export PNG** saves
+the complete timetable, including rows outside the visible scroll area.
 
 The app reads ACORN's current-registration and timetable APIs. ACORN is an
 internal service and may change its response format; this project is not

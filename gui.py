@@ -3,12 +3,13 @@ import random
 import sys
 
 from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QGridLayout,
     QGroupBox,
     QHeaderView,
@@ -50,6 +51,7 @@ QPushButton:disabled { background: #aeb8c4; }
 QComboBox { background: white; border: 1px solid #dfe1e5;
             border-radius: 4px; padding: 5px; }
 QTableWidget { background: white; border: 1px solid #dfe1e5; gridline-color: #e8eaed; }
+QTableWidget::item { padding: 3px; }
 QHeaderView::section { background: #f8f9fa; border: 0; border-right: 1px solid #dfe1e5;
                        border-bottom: 1px solid #dfe1e5; padding: 6px; font-weight: 600; }
 """
@@ -77,6 +79,8 @@ class TimetableWidget(QTableWidget):
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setSelectionMode(QAbstractItemView.NoSelection)
         self.setFocusPolicy(Qt.NoFocus)
+        self.setTextElideMode(Qt.ElideNone)
+        self.setWordWrap(True)
         self.show_schedule([])
 
     def show_schedule(self, schedule):
@@ -100,7 +104,7 @@ class TimetableWidget(QTableWidget):
             ]
         )
         for row in range(self.rowCount()):
-            self.setRowHeight(row, 24)
+            self.setRowHeight(row, 32)
 
         palette = list(COLORS)
         random.shuffle(palette)
@@ -121,7 +125,7 @@ class TimetableWidget(QTableWidget):
             )
             location = f"\n{meeting.location}" if meeting.location else ""
             item = QTableWidgetItem(
-                f"{section.course}\n{section.code}\n"
+                f"{section.course} · {section.code}\n"
                 f"{_clock(meeting.start)}–{_clock(meeting.end)}{location}"
             )
             item.setBackground(QColor(color))
@@ -129,6 +133,46 @@ class TimetableWidget(QTableWidget):
             item.setTextAlignment(Qt.AlignLeft | Qt.AlignTop)
             self.setSpan(row, meeting.day, span, 1)
             self.setItem(row, meeting.day, item)
+
+    def save_png(self, path, title):
+        old_size = self.size()
+        old_minimum = self.minimumSize()
+        old_maximum = self.maximumSize()
+        old_vertical = self.verticalScrollBarPolicy()
+        old_horizontal = self.horizontalScrollBarPolicy()
+        height = (
+            self.horizontalHeader().height()
+            + sum(self.rowHeight(row) for row in range(self.rowCount()))
+            + self.frameWidth() * 2
+        )
+
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFixedSize(old_size.width(), height)
+        QApplication.processEvents()
+        table_image = QPixmap(self.size())
+        table_image.fill(Qt.white)
+        self.render(table_image)
+
+        image = QPixmap(table_image.width(), table_image.height() + 52)
+        image.fill(Qt.white)
+        painter = QPainter(image)
+        font = painter.font()
+        font.setPointSize(font.pointSize() + 4)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(16, 0, image.width() - 32, 52, Qt.AlignVCenter, title)
+        painter.drawPixmap(0, 52, table_image)
+        painter.end()
+        saved = image.save(path, "PNG")
+
+        self.setMinimumSize(old_minimum)
+        self.setMaximumSize(old_maximum)
+        self.resize(old_size)
+        self.setVerticalScrollBarPolicy(old_vertical)
+        self.setHorizontalScrollBarPolicy(old_horizontal)
+        QApplication.processEvents()
+        return saved
 
 
 def _clock(minutes):
@@ -225,7 +269,12 @@ class MainWindow(QMainWindow):
         self.generate_button = QPushButton("Generate")
         self.generate_button.setEnabled(False)
         self.generate_button.clicked.connect(self.generate)
-        grid.addWidget(self.generate_button, 2, 4, 1, 2)
+        grid.addWidget(self.generate_button, 2, 4)
+
+        self.export_button = QPushButton("Export PNG")
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self.export_png)
+        grid.addWidget(self.export_button, 2, 5)
         layout.addWidget(preferences)
 
         self.view_title = QLabel("Load courses to view your timetable.")
@@ -278,6 +327,7 @@ class MainWindow(QMainWindow):
         self.groups = self.periods[index] if 0 <= index < len(self.periods) else {}
         self.generate_button.setEnabled(bool(self.groups))
         self.view_button.setEnabled(bool(self.groups))
+        self.export_button.setEnabled(False)
         self.timetable.show_schedule([])
         if self.groups:
             self.view_title.setText("Choose View my courses or Generate.")
@@ -290,6 +340,7 @@ class MainWindow(QMainWindow):
     def view_courses(self):
         schedule = [sections[0] for sections in self.groups.values() if sections]
         self.timetable.show_schedule(schedule)
+        self.export_button.setEnabled(bool(schedule))
         self.view_title.setText(f"{self.session.currentText()} · My courses")
 
     def generate(self):
@@ -301,12 +352,28 @@ class MainWindow(QMainWindow):
         )
         if not schedules:
             self.timetable.show_schedule([])
+            self.export_button.setEnabled(False)
             self.view_title.setText(
                 "No conflict-free timetable matches these preferences."
             )
             return
         self.timetable.show_schedule(schedules[0])
+        self.export_button.setEnabled(True)
         self.view_title.setText(f"{self.session.currentText()} · Generated timetable")
+
+    def export_png(self):
+        name = self.session.currentText().replace(" · ", "-").replace("/", "-")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export timetable", f"{name}.png", "PNG image (*.png)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".png"):
+            path += ".png"
+        if self.timetable.save_png(path, self.view_title.text()):
+            self.status.setText(f"Timetable exported to {path}")
+        else:
+            self.status.setText("Could not export the timetable.")
 
     def closeEvent(self, event):
         if self.thread and self.thread.isRunning():
