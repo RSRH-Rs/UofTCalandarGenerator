@@ -1,30 +1,20 @@
-# UofTCalandarGenerator
+# U of T Timetable Generator
 
-Headless Selenium script that signs in to **acorn.utoronto.ca**, captures **cookies** and **`X-XSRF-TOKEN`**, and optionally fetches your **current timetable / course codes** via ACORN’s REST endpoints.
-
-## Features
-
-- get_courses_info(True) returns just course codes
-- get_courses_info(False) returns full activity objects
-
-## Requirements
-
-- Python **3.9+**
-- Python packages: `selenium`, `requests`, `pyqt5`
-
-## Install
-
-```bash
-pip install -r requirements.txt
-pip install selenium requests
-```
-
-## Configure
-
-In `config.py` configure your informations:
+A small desktop app that signs in to ACORN, loads your courses, and generates
+conflict-free timetables from your preferences.
 
 ## Run
 
-```python
+Python 3.10 or newer is required.
+
+```bash
+pip install -r requirements.txt
 python gui.py
 ```
+
+Click **Sign in to ACORN**, then complete UTORid and Duo sign-in in the Chrome
+window. Credentials and cookies are not saved to disk.
+
+The app reads ACORN's current-registration and timetable APIs. ACORN is an
+internal service and may change its response format; this project is not
+affiliated with the University of Toronto.

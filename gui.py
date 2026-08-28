@@ -1,392 +1,204 @@
 import sys
-import datetime
-import time
-import os
-import json
 
-import requests
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
-from PyQt5.QtGui import QColor, QTextCursor, QFont
+from PyQt5.QtCore import QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
-    QMainWindow,
-    QWidget,
+    QCheckBox,
+    QComboBox,
+    QGridLayout,
+    QGroupBox,
     QLabel,
-    QLineEdit,
+    QMainWindow,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
-    QHBoxLayout,
-    QGridLayout,
-    QGroupBox,
+    QWidget,
+)
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+
+from utils import (
+    AcornClient,
+    DAY_NAMES,
+    extract_sections,
+    format_timetable,
+    generate_timetables,
+    split_periods,
 )
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException
-from config import level_colors, level_emojis, gui_style, selenium_chrome_options
-
-COOKIE_FILE = "acorn_cookies.json"
-
-
-class LogTextEdit(QTextEdit):
-    """DIY Log output colors + emoji"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setReadOnly(True)
-
-        # Log colors
-        self.level_colors = level_colors
-
-        # emoji
-        self.level_emojis = level_emojis
-
-        # log text
-        font = QFont("Consolas")
-        font.setPointSize(10)
-        self.setFont(font)
-
-    def append_log(self, message: str, level: str = "info"):
-        """append a message with color and timestamp and emoji"""
-        color = self.level_colors.get(level, QColor("#333333"))
-        emoji = self.level_emojis.get(level, "•")
-
-        self.setTextColor(color)
-
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        self.append(f"[{timestamp}] {emoji} {message}")
-
-        # move to the end
-        self.moveCursor(QTextCursor.End)
-        self.setTextColor(QColor("#333333"))  # set default color
+STYLE = """
+QWidget { font: 13px "Segoe UI"; color: #202124; }
+QMainWindow { background: #f6f7f9; }
+QGroupBox { background: white; border: 1px solid #dfe1e5; border-radius: 6px;
+            margin-top: 10px; padding-top: 10px; }
+QGroupBox::title { left: 10px; padding: 0 4px; font-weight: 600; }
+QPushButton { background: #1a73e8; color: white; border: 0; border-radius: 4px;
+              padding: 8px 14px; }
+QPushButton:disabled { background: #aeb8c4; }
+QComboBox, QTextEdit { background: white; border: 1px solid #dfe1e5;
+                       border-radius: 4px; padding: 5px; }
+"""
 
 
 class LoginWorker(QObject):
-    """Selenium login in other threads"""
-
-    log = pyqtSignal(str, str)  # message, level
-    finished = pyqtSignal(object, object)  # cookies_dict, xsrf_token
-    failed = pyqtSignal(str)  # error message
-
-    def __init__(self, username: str, password: str, parent=None):
-        super().__init__(parent)
-        self.username = username
-        self.password = password
+    finished = pyqtSignal(object)
+    failed = pyqtSignal(str)
 
     def run(self):
-        chrome_options = Options()
-        for o in selenium_chrome_options:
-            chrome_options.add_argument(o)
-
-        driver = webdriver.Chrome(options=chrome_options)
-
-        cookies_dict = {}
-        xsrf_token = None
-
+        options = Options()
+        options.add_argument("--disable-notifications")
+        driver = None
         try:
-            self.log.emit("Redirecting to login page...", "info")
+            driver = webdriver.Chrome(options=options)
             driver.get("https://acorn.utoronto.ca/")
 
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "username"))
+            # The user completes UTORid and Duo in the browser.
+            WebDriverWait(driver, 300).until(
+                lambda browser: "/sws/" in browser.current_url
+                and any(
+                    cookie["name"] == "XSRF-TOKEN" for cookie in browser.get_cookies()
+                )
             )
-
-            # input username and pwd elements
-            username_input = driver.find_element(By.ID, "username")
-            password_input = driver.find_element(By.ID, "password")
-
-            # username and password
-            username_input.send_keys(self.username)
-            password_input.send_keys(self.password)
-
-            login_button = driver.find_element(By.NAME, "_eventId_proceed")
-            login_button.click()
-            time.sleep(0.5)
-            current_url = driver.current_url
-            if "idpz.utorauth.utoronto.ca" in current_url:
-                self.log.emit("Your username or password is wrong!", "warning")
-                self.failed.emit("Invalid credentials")
-                return
-            else:
-                self.log.emit("Login submitted, waiting for Duo Mobile...", "info")
-
-            # Duo / trust-browser step
-            try:
-                self.log.emit("Wating for user to pass Duo Mobile...", "info")
-                trust_button = WebDriverWait(driver, 15).until(
-                    EC.element_to_be_clickable((By.ID, "trust-browser-button"))
-                )
-                trust_button.click()
-                self.log.emit("Duo Mobile passed.", "success")
-            except TimeoutException as e:
-                self.log.emit(f"Duo Mobile timeout : {e}", "warning")
-                return
-
-            try:
-                WebDriverWait(driver, 60).until(EC.url_contains("/sws/"))
-                self.log.emit("Redirected back to ACORN SWS.", "info")
-            except TimeoutException:
-                self.log.emit(
-                    "Wait for ACORN main page timeout, continue anyway.", "warning"
-                )
-
-            # get cookies
-            cookies = driver.get_cookies()
-            cookies_dict = {cookie["name"]: cookie["value"] for cookie in cookies}
-
-            # get X-XSRF-TOKEN
-            if "XSRF-TOKEN" in cookies_dict:
-                xsrf_token = cookies_dict["XSRF-TOKEN"]
-                self.log.emit("X-XSRF-TOKEN fetched successfully.", "success")
-            else:
-                self.log.emit("Can't find XSRF-TOKEN in cookies.", "error")
-                self.log.emit(str(cookies_dict), "error")
-                self.failed.emit("XSRF token not found")
-                return
-
-            self.finished.emit(cookies_dict, xsrf_token)
-
-        except Exception as e:
-            self.log.emit(f"Error while login: {str(e)}", "error")
-            self.failed.emit(str(e))
+            cookies = {
+                cookie["name"]: cookie["value"] for cookie in driver.get_cookies()
+            }
+            payloads = AcornClient(cookies, cookies["XSRF-TOKEN"]).fetch_courses()
+            self.finished.emit(payloads)
+        except Exception as error:
+            self.failed.emit(str(error))
         finally:
-            driver.quit()
+            if driver:
+                driver.quit()
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("UofT Timetable Generator")
-        self.resize(900, 500)
-
-        self.cookies_dict = None
-        self.xsrf_token = None
+        self.setWindowTitle("U of T Timetable Generator")
+        self.resize(720, 620)
+        self.setStyleSheet(STYLE)
+        self.groups = {}
+        self.periods = []
         self.thread = None
         self.worker = None
-        self.current_username = None
 
-        self.cookie_store = self.load_cookie_store()
+        root = QWidget()
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+        self.setCentralWidget(root)
 
-        # GUI styles
-        self.setStyleSheet(gui_style)
+        self.status = QLabel("Sign in to ACORN to load your courses.")
+        self.login_button = QPushButton("Sign in to ACORN")
+        self.login_button.clicked.connect(self.login)
+        layout.addWidget(self.status)
+        layout.addWidget(self.login_button)
 
-        # center Widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        preferences = QGroupBox("Preferences")
+        grid = QGridLayout(preferences)
+        grid.addWidget(QLabel("Session"), 0, 0)
+        self.session = QComboBox()
+        self.session.currentIndexChanged.connect(self.select_period)
+        grid.addWidget(self.session, 0, 1, 1, 5)
 
-        # Username & password panel
-        account_group = QGroupBox("Login Infos")
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(12)
+        grid.addWidget(QLabel("Days off"), 1, 0)
+        self.day_boxes = []
+        for column, day in enumerate(DAY_NAMES, start=1):
+            box = QCheckBox(day[:3])
+            self.day_boxes.append(box)
+            grid.addWidget(box, 1, column)
 
-        username_label = QLabel("Username:")
-        self.username_edit = QLineEdit()
-        self.username_edit.setPlaceholderText("UTORid / JOINid")
+        grid.addWidget(QLabel("Earliest class"), 2, 0)
+        self.earliest = QComboBox()
+        self.earliest.addItem("No limit", None)
+        for hour in range(9, 16):
+            self.earliest.addItem(f"{hour:02d}:00", hour * 60)
+        grid.addWidget(self.earliest, 2, 1, 1, 2)
 
-        password_label = QLabel("Password:")
-        self.password_edit = QLineEdit()
-        self.password_edit.setPlaceholderText("Please input your password")
-        self.password_edit.setEchoMode(QLineEdit.Password)
+        self.generate_button = QPushButton("Generate")
+        self.generate_button.setEnabled(False)
+        self.generate_button.clicked.connect(self.generate)
+        grid.addWidget(self.generate_button, 2, 4, 1, 2)
+        layout.addWidget(preferences)
 
-        self.login_button = QPushButton("Login")
-        self.login_button.clicked.connect(self.handle_login)
+        self.results = QTextEdit()
+        self.results.setReadOnly(True)
+        self.results.setPlaceholderText("Generated timetables will appear here.")
+        layout.addWidget(self.results, 1)
 
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        btn_layout.addWidget(self.login_button)
-
-        # Layout
-        grid.addWidget(username_label, 0, 0)
-        grid.addWidget(self.username_edit, 0, 1)
-        grid.addWidget(password_label, 1, 0)
-        grid.addWidget(self.password_edit, 1, 1)
-        grid.addLayout(btn_layout, 2, 0, 1, 2)
-
-        grid.setColumnStretch(0, 0)
-        grid.setColumnStretch(1, 1)
-
-        account_group.setLayout(grid)
-
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.addWidget(account_group)
-        left_layout.addStretch()
-        left_layout.setSpacing(15)
-
-        # Log widgets
-        log_group = QGroupBox("Log")
-        log_layout = QVBoxLayout()
-        self.log_widget = LogTextEdit()
-        log_layout.addWidget(self.log_widget)
-        log_group.setLayout(log_layout)
-
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.addWidget(log_group)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-
-        main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(16, 16, 16, 16)
-        main_layout.setSpacing(16)
-
-        main_layout.addWidget(left_panel, 1)
-        main_layout.addWidget(right_panel, 2)
-
-        central_widget.setLayout(main_layout)
-
-        self.log_widget.append_log("This is a UofT timetable generator.", "info")
-        self.log_widget.append_log(
-            "Please input your UTORid and password to login.", "info"
-        )
-
-    def load_cookie_store(self) -> dict:
-        """Load cookie cache from local file"""
-        if not os.path.exists(COOKIE_FILE):
-            return {}
-        try:
-            with open(COOKIE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                return data
-            return {}
-        except Exception:
-
-            return {}
-
-    def save_cookie_store(self):
-        """Save cookie cache to local file"""
-        try:
-            with open(COOKIE_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.cookie_store, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            self.log_widget.append_log(f"Failed to save cookie file: {str(e)}", "error")
-
-    def try_use_cached_session(self, username: str) -> bool:
-        """use local cookies cache if still valid."""
-        user_entry = self.cookie_store.get(username)
-        if not user_entry:
-            self.log_widget.append_log(
-                "No saved cookies found for this user, will login.", "error"
-            )
-            return False
-
-        cookies_dict = user_entry.get("cookies") or {}
-        xsrf_token = user_entry.get("xsrf_token")
-
-        if not cookies_dict or not xsrf_token:
-            self.log_widget.append_log(
-                "Saved cookies are not longer valid, will login again.", "warning"
-            )
-            return False
-
-        self.log_widget.append_log(
-            "Found saved cookies, trying to reuse session...", "info"
-        )
-
-        try:
-            session = requests.Session()
-            session.cookies.update(cookies_dict)
-
-            headers = {"X-XSRF-TOKEN": xsrf_token}
-            test_url = (
-                "https://acorn.utoronto.ca/sws/rest/enrolment/current-registrations"
-            )
-            resp = session.get(test_url, headers=headers, timeout=10)
-
-            if resp.status_code == 200:
-                self.log_widget.append_log(
-                    "Saved session is still valid, login skipped.", "success"
-                )
-                self.cookies_dict = cookies_dict
-                self.xsrf_token = xsrf_token
-                return True
-            else:
-                self.log_widget.append_log(
-                    f"Saved session invalid Code:{resp.status_code}, re-login needed.",
-                    "warning",
-                )
-                return False
-        except Exception as e:
-            self.log_widget.append_log(
-                f"Failed to reuse cookies, will login again: {str(e)}", "warning"
-            )
-            return False
-
-    def handle_login(self):
-        username = self.username_edit.text().strip()
-        password = self.password_edit.text().strip()
-
-        if not username or not password:
-            self.log_widget.append_log(
-                "Username or password can't be empty.", "warning"
-            )
-            return
-
-        self.current_username = username
-
-        # try use local cookies
-        if self.try_use_cached_session(username):
-            # if still valid no need to login and get cookies again.
-            return
-
-        self.log_widget.append_log(f"Trying to login: {username}", "info")
-
+    def login(self):
         self.login_button.setEnabled(False)
+        self.status.setText("Complete UTORid and Duo sign-in in the Chrome window...")
 
-        # Create threads worker
         self.thread = QThread(self)
-        self.worker = LoginWorker(username, password)
+        self.worker = LoginWorker()
         self.worker.moveToThread(self.thread)
-
-        # start worker.run
         self.thread.started.connect(self.worker.run)
-
-        # connect to log signal
-        self.worker.log.connect(self.log_widget.append_log)
-
-        # handle sucess and failed
-        self.worker.finished.connect(self.on_login_finished)
-        self.worker.failed.connect(self.on_login_failed)
-
-        # quit threads
+        self.worker.finished.connect(self.login_finished)
+        self.worker.failed.connect(self.login_failed)
         self.worker.finished.connect(self.thread.quit)
         self.worker.failed.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.worker.failed.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
-        self.thread.finished.connect(lambda: self.login_button.setEnabled(True))
-
         self.thread.start()
 
-    def on_login_finished(self, cookies_dict, xsrf_token):
-        """finished callback"""
-        self.cookies_dict = cookies_dict
-        self.xsrf_token = xsrf_token
+    def login_finished(self, sessions):
+        self.periods = []
+        self.session.clear()
+        courses = set()
+        for session in sessions:
+            groups = extract_sections(session["data"])
+            courses.update(course for course, _ in groups)
+            for period_name, period_groups in split_periods(groups):
+                self.periods.append(period_groups)
+                self.session.addItem(f"{session['label']} · {period_name}")
 
-        # cookies cache
-        if self.current_username:
-            self.cookie_store[self.current_username] = {
-                "cookies": cookies_dict,
-                "xsrf_token": xsrf_token,
-                "saved_at": datetime.datetime.now().isoformat(),
-            }
-            self.save_cookie_store()
-            self.log_widget.append_log(
-                "Cookies saved locally for future logins.", "success"
+        self.status.setText(
+            f"Loaded {len(courses)} courses in {len(self.periods)} periods."
+        )
+        self.login_button.setEnabled(True)
+        self.select_period(self.session.currentIndex())
+        if not self.periods:
+            self.results.setPlainText(
+                "ACORN returned courses, but no meeting times were recognized."
             )
 
-        self.log_widget.append_log(
-            "Login finished. Cookies and XSRF token saved.", "success"
+    def select_period(self, index):
+        self.groups = self.periods[index] if 0 <= index < len(self.periods) else {}
+        self.generate_button.setEnabled(bool(self.groups))
+
+    def login_failed(self, message):
+        self.status.setText("Sign-in or course loading failed.")
+        self.results.setPlainText(message)
+        self.login_button.setEnabled(True)
+
+    def generate(self):
+        days_off = {
+            index for index, box in enumerate(self.day_boxes) if box.isChecked()
+        }
+        schedules = generate_timetables(
+            self.groups, days_off, self.earliest.currentData(), limit=20
+        )
+        if not schedules:
+            self.results.setPlainText(
+                "No conflict-free timetable matches these preferences."
+            )
+            return
+        self.results.setPlainText(
+            "\n\n".join(
+                format_timetable(schedule, index)
+                for index, schedule in enumerate(schedules, start=1)
+            )
         )
 
-    def on_login_failed(self, msg: str):
-        """failed callback"""
-        self.log_widget.append_log(f"Login failed: {msg}", "error")
+    def closeEvent(self, event):
+        if self.thread and self.thread.isRunning():
+            self.status.setText("Close the ACORN Chrome window before exiting.")
+            event.ignore()
+            return
+        super().closeEvent(event)
 
 
 def main():
