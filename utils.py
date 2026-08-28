@@ -255,7 +255,9 @@ def _course_code(value: dict) -> str:
     for key in ("courseCode", "course", "code", "name"):
         match = COURSE_RE.search(str(_pick(value, key) or "").upper())
         if match:
-            return " ".join(match.group().split())
+            code = " ".join(match.group().split())
+            term = str(_pick(value, "sectionCode") or "").upper()
+            return f"{code} {term}" if term in {"F", "S", "Y"} else code
     return ""
 
 
@@ -263,8 +265,9 @@ def _section_code(value: dict) -> str:
     for key in (
         "sectionCode",
         "activityCode",
-        "academicActivityCode",
-        "activity",
+            "academicActivityCode",
+            "teachMethod",
+            "activity",
         "code",
         "name",
     ):
@@ -278,6 +281,7 @@ def _section_code(value: dict) -> str:
             "activityType",
             "activityTypeCode",
             "academicActivityCode",
+            "teachMethod",
             "teachingMethod",
             "teachingMethodCode",
             "type",
@@ -285,7 +289,9 @@ def _section_code(value: dict) -> str:
         or ""
     ).upper()
     activity = ACTIVITY_TYPES.get(activity, activity[:3])
-    number = _pick(value, "sectionNumber", "section", "activityCode")
+    number = _pick(
+        value, "sectionNumber", "number", "section", "activityCode"
+    )
     if activity in set(ACTIVITY_TYPES.values()) and number is not None:
         return f"{activity} {str(number).strip()}"
     return ""
@@ -358,9 +364,24 @@ def _meeting(value: dict) -> list[Meeting]:
         ),
         None,
     )
-    start_minutes, end_minutes = _time(start), _time(end)
+    display_time = lowered.get("displaytime")
+    display_match = re.search(
+        r"(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})",
+        str(display_time),
+    )
+    if display_match:
+        start_minutes, end_minutes = map(_time, display_match.groups())
+        if start_minutes < 8 * 60:
+            start_minutes += 12 * 60
+        while end_minutes <= start_minutes:
+            end_minutes += 12 * 60
+    else:
+        start_minutes, end_minutes = _time(start), _time(end)
     if day_value is None or start_minutes is None or end_minutes is None:
         return []
+
+    if isinstance(day_value, dict):
+        day_value = _pick(day_value, "dayName", "dayCode", "index")
 
     location = next(
         (
