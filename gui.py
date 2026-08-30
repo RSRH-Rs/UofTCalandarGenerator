@@ -43,6 +43,7 @@ from utils import (
     search_courses,
     section_summary,
     session_label,
+    unavoidable_conflicts,
 )
 
 MAX_SCHEDULES = 20
@@ -308,11 +309,14 @@ class MainWindow(QMainWindow):
         grid.addWidget(QLabel("Session"), 0, 0)
         self.session = QComboBox()
         self.session.currentIndexChanged.connect(self.select_session)
-        grid.addWidget(self.session, 0, 1, 1, 5)
+        grid.addWidget(self.session, 0, 1, 1, 6)
 
         grid.addWidget(QLabel("Days off"), 1, 0)
+        self.any_day_off = QCheckBox("Any 1 day")
+        self.any_day_off.stateChanged.connect(self.any_day_off_changed)
+        grid.addWidget(self.any_day_off, 1, 1)
         self.day_boxes = []
-        for column, day in enumerate(DAY_NAMES, start=1):
+        for column, day in enumerate(DAY_NAMES, start=2):
             check = QCheckBox(day[:3])
             check.stateChanged.connect(self.remember)
             self.day_boxes.append(check)
@@ -324,28 +328,39 @@ class MainWindow(QMainWindow):
         for hour in range(8, 17):
             self.earliest.addItem(f"{hour:02d}:00", hour * 60)
         self.earliest.currentIndexChanged.connect(self.remember)
-        grid.addWidget(self.earliest, 2, 1, 1, 2)
+        grid.addWidget(self.earliest, 2, 1, 1, 3)
 
         self.generate_button = QPushButton("Generate")
         self.generate_button.setEnabled(False)
         self.generate_button.clicked.connect(self.generate)
-        grid.addWidget(self.generate_button, 2, 3)
+        grid.addWidget(self.generate_button, 2, 4)
 
         self.previous_button = QPushButton("◀ Previous")
         self.previous_button.setEnabled(False)
         self.previous_button.clicked.connect(lambda: self.step(-1))
-        grid.addWidget(self.previous_button, 2, 4)
+        grid.addWidget(self.previous_button, 2, 5)
 
         self.next_button = QPushButton("Next ▶")
         self.next_button.setEnabled(False)
         self.next_button.clicked.connect(lambda: self.step(1))
-        grid.addWidget(self.next_button, 2, 5)
+        grid.addWidget(self.next_button, 2, 6)
 
         self.export_button = QPushButton("Export PNG")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_png)
-        grid.addWidget(self.export_button, 3, 5)
+        grid.addWidget(self.export_button, 3, 6)
         return box
+
+    def any_day_off_changed(self, state, remember=True):
+        enabled = not bool(state)
+        for box in self.day_boxes:
+            box.blockSignals(True)
+            if not enabled:
+                box.setChecked(False)
+            box.setEnabled(enabled)
+            box.blockSignals(False)
+        if remember:
+            self.remember()
 
     # -- background work ------------------------------------------------
 
@@ -568,7 +583,11 @@ class MainWindow(QMainWindow):
         }
         earliest = self.earliest.currentData()
         self.schedules = generate_timetables(
-            groups, days_off, earliest, limit=MAX_SCHEDULES
+            groups,
+            days_off,
+            earliest,
+            limit=MAX_SCHEDULES,
+            minimum_days_off=1 if self.any_day_off.isChecked() else 0,
         )
         self.index = 0
 
@@ -581,6 +600,19 @@ class MainWindow(QMainWindow):
                     f"{course} {activity}" for course, activity in blocked
                 )
                 self.view_title.setText(f"No section of {names} fits these preferences.")
+            elif conflicts := unavoidable_conflicts(groups, days_off, earliest):
+                left, right = conflicts[0]
+                left_name = f"{left[0]} {left[1]}"
+                right_name = f"{right[0]} {right[1]}"
+                self.view_title.setText(
+                    f"Every section pairing of {left_name} and {right_name} conflicts."
+                )
+            elif self.any_day_off.isChecked() and generate_timetables(
+                groups, days_off, earliest, limit=1
+            ):
+                self.view_title.setText(
+                    "Conflict-free schedules exist, but none has a free weekday."
+                )
             else:
                 self.view_title.setText(
                     "Every combination of these sections has a time conflict."
@@ -643,6 +675,10 @@ class MainWindow(QMainWindow):
             box.blockSignals(True)
             box.setChecked(index in set(config.get("days_off") or []))
             box.blockSignals(False)
+        self.any_day_off.blockSignals(True)
+        self.any_day_off.setChecked(bool(config.get("any_day_off")))
+        self.any_day_off.blockSignals(False)
+        self.any_day_off_changed(self.any_day_off.checkState(), remember=False)
         earliest = self.earliest.findData(config.get("earliest"))
         if earliest >= 0:
             self.earliest.blockSignals(True)
@@ -686,6 +722,7 @@ class MainWindow(QMainWindow):
                     for index, box in enumerate(self.day_boxes)
                     if box.isChecked()
                 ),
+                "any_day_off": self.any_day_off.isChecked(),
                 "earliest": self.earliest.currentData(),
             }
         )

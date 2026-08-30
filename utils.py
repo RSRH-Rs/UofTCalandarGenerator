@@ -53,6 +53,7 @@ class Section:
     activity: str
     code: str
     meetings: tuple[Meeting, ...]
+    asynchronous: bool = False
 
 
 @dataclass(frozen=True)
@@ -90,11 +91,11 @@ class CourseMatch:
 
 def fetch_offerings(code: str, timeout: int = 20) -> list[Offering]:
     """Look up every offering of ``code`` (e.g. ``CSC108H1``) across sessions."""
-    import requests
-
     code = normalize_code(code)
     if not COURSE_CODE_RE.match(code):
         raise CourseNotFound(f"{code} is not a valid course code (e.g. CSC108H1)")
+
+    import requests
 
     response = requests.get(
         f"{TTB_URL}/{code}", timeout=timeout, headers={"Accept": "application/json"}
@@ -126,11 +127,11 @@ def fetch_many(codes, timeout: int = 20) -> tuple[list[Offering], list[str]]:
 
 def search_courses(term: str, limit: int = 40, timeout: int = 15) -> list[CourseMatch]:
     """Type-ahead search over course codes, titles and descriptions."""
-    import requests
-
     term = str(term).strip()
     if not term:
         return []
+
+    import requests
 
     divisions, sessions = _reference_data(timeout)
     response = requests.get(
@@ -288,6 +289,8 @@ def apply_pins(
 
 
 def section_summary(section: Section) -> str:
+    if section.asynchronous:
+        return "Asynchronous (Online)"
     return ", ".join(
         f"{DAY_NAMES[meeting.day][:3]} {clock(meeting.start)}–{clock(meeting.end)}"
         for meeting in section.meetings
@@ -382,13 +385,52 @@ def blocked_groups(
     ]
 
 
+def unavoidable_conflicts(
+    groups: dict[tuple[str, str], list[Section]],
+    days_off: set[int] | None = None,
+    earliest: int | None = None,
+) -> list[tuple[tuple[str, str], tuple[str, str]]]:
+    """Pairs of groups for which every allowed section pairing overlaps.
+
+    This does not replace the full timetable search: conflicts can involve
+    three or more groups even when every pair has at least one compatible
+    choice.  It is a useful explanation when a pair alone makes the requested
+    timetable impossible, though.
+    """
+    allowed_groups = [
+        (key, allowed_sections(sections, days_off, earliest))
+        for key, sections in groups.items()
+    ]
+    conflicts = []
+    for index, (left_key, left_sections) in enumerate(allowed_groups):
+        if not left_sections:
+            continue
+        for right_key, right_sections in allowed_groups[index + 1 :]:
+            if not right_sections:
+                continue
+            if all(
+                any(
+                    _overlaps(left_meeting, right_meeting)
+                    for left_meeting in left.meetings
+                    for right_meeting in right.meetings
+                )
+                for left in left_sections
+                for right in right_sections
+            ):
+                conflicts.append((left_key, right_key))
+    return conflicts
+
+
 def generate_timetables(
     groups: dict[tuple[str, str], list[Section]],
     days_off: set[int] | None = None,
     earliest: int | None = None,
     limit: int = 20,
+    minimum_days_off: int = 0,
 ) -> list[list[Section]]:
     """Return up to ``limit`` conflict-free timetables, best-scoring first."""
+    minimum_days_off = max(0, min(5, minimum_days_off))
+    maximum_used_days = 5 - minimum_days_off
     choices = []
     for sections in groups.values():
         allowed = allowed_sections(sections, days_off, earliest)
@@ -417,6 +459,9 @@ def generate_timetables(
                 for meeting in section.meetings
                 for placed in meetings
             ):
+                continue
+            used_days = {meeting.day for meeting in (*meetings, *section.meetings)}
+            if len(used_days) > maximum_used_days:
                 continue
             count = len(section.meetings)
             chosen.append(section)
@@ -451,6 +496,10 @@ def format_timetable(schedule: list[Section], number: int) -> str:
                 f"  {clock(meeting.start)}–{clock(meeting.end)}  "
                 f"{section.course} {section.code}{location}"
             )
+    asynchronous = [section for section in schedule if section.asynchronous]
+    if asynchronous:
+        lines.append("Asynchronous (Online)")
+        lines.extend(f"  {section.course} {section.code}" for section in asynchronous)
     return "\n".join(lines)
 
 
@@ -471,9 +520,15 @@ def _parse_section(raw, course: str) -> Section | None:
         meeting = _parse_meeting(raw_meeting)
         if meeting:
             meetings.append(meeting)
-    if not meetings:
-        # Asynchronous or to-be-announced sections have nothing to schedule
-        # around, so they cannot take part in conflict detection.
+    delivery_modes = {
+        str(item.get("mode") or "").strip().upper()
+        for item in raw.get("deliveryModes") or []
+        if isinstance(item, dict)
+    }
+    asynchronous = "ASYNC" in delivery_modes
+    if not meetings and not asynchronous:
+        # A TBA section has no usable scheduling information. Unlike a known
+        # asynchronous section, treating it as conflict-free would be unsafe.
         return None
 
     return Section(
@@ -481,6 +536,7 @@ def _parse_section(raw, course: str) -> Section | None:
         activity=activity,
         code=f"{activity} {number}",
         meetings=tuple(sorted(set(meetings), key=_meeting_key)),
+        asynchronous=asynchronous,
     )
 
 
